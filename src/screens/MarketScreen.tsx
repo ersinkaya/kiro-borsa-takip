@@ -15,10 +15,13 @@ import { COLORS, SPACING } from '../constants/theme';
 import { useStockStore } from '../store/useStockStore';
 import { Stock } from '../types';
 import { QRCodeModal } from '../components/QRCodeModal';
+import { TradeModal } from '../components/TradeModal';
+import { formatTL } from '../utils/format';
 
 export function MarketScreen() {
   const navigation = useNavigation<any>();
   const [showQR, setShowQR] = useState(false);
+  const [tradeStock, setTradeStock] = useState<Stock | null>(null);
   const { stocks, isLoading, lastUpdated, error, searchQuery, fetchPrices, setSearchQuery, getFilteredStocks } =
     useStockStore();
 
@@ -46,7 +49,7 @@ export function MarketScreen() {
         </View>
         <View style={styles.stockRight}>
           <Text style={styles.stockPrice}>
-            {item.price > 0 ? `₺${item.price.toFixed(2)}` : '—'}
+            {item.price > 0 ? formatTL(item.price) : '—'}
           </Text>
           <View
             style={[
@@ -69,6 +72,12 @@ export function MarketScreen() {
             </Text>
           </View>
         </View>
+        <TouchableOpacity
+          style={styles.tradeIcon}
+          onPress={() => setTradeStock(item)}
+        >
+          <Ionicons name="cart-outline" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
       </TouchableOpacity>
     ),
     [navigation]
@@ -143,6 +152,17 @@ export function MarketScreen() {
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {/* Alım/Satım Modal */}
+      {tradeStock && (
+        <TradeModal
+          visible={!!tradeStock}
+          onClose={() => setTradeStock(null)}
+          symbol={tradeStock.symbol}
+          name={tradeStock.name}
+          currentPrice={tradeStock.price}
         />
       )}
     </View>
@@ -236,6 +256,10 @@ const styles = StyleSheet.create({
   },
   stockRight: {
     alignItems: 'flex-end',
+  },
+  tradeIcon: {
+    padding: SPACING.xs,
+    marginLeft: SPACING.sm,
   },
   stockPrice: {
     color: COLORS.text,

@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
 import { usePortfolioStore } from '../store/usePortfolioStore';
 import { differenceInDays } from 'date-fns';
+import { formatTL } from '../utils/format';
 
 export function AnalysisScreen() {
   const { portfolio, transactions, account, interestRate, setInterestRate } =
@@ -155,7 +156,7 @@ export function AnalysisScreen() {
                   { color: portfolioReturn >= 0 ? COLORS.success : COLORS.danger },
                 ]}
               >
-                {portfolioReturn >= 0 ? '+' : ''}₺{portfolioReturn.toFixed(2)}
+                {portfolioReturn >= 0 ? '+' : ''}{formatTL(portfolioReturn)}
               </Text>
               <Text
                 style={[
@@ -179,7 +180,7 @@ export function AnalysisScreen() {
             </View>
             <View style={styles.comparisonRight}>
               <Text style={[styles.comparisonValue, { color: COLORS.warning }]}>
-                +₺{interestAnalysis.interestEarning.toFixed(2)}
+                +{formatTL(interestAnalysis.interestEarning)}
               </Text>
             </View>
           </View>
@@ -201,7 +202,7 @@ export function AnalysisScreen() {
                   { color: difference >= 0 ? COLORS.success : COLORS.danger },
                 ]}
               >
-                {difference >= 0 ? '+' : ''}₺{difference.toFixed(2)}
+                {difference >= 0 ? '+' : ''}{formatTL(difference)}
               </Text>
             </View>
           </View>
@@ -229,8 +230,8 @@ export function AnalysisScreen() {
             ]}
           >
             {difference >= 0
-              ? `Portföyünüz faizden ₺${difference.toFixed(2)} daha fazla kazandırdı!`
-              : `Faize yatırsaydınız ₺${Math.abs(difference).toFixed(2)} daha fazla kazanırdınız.`}
+              ? `Portföyünüz faizden ${formatTL(difference)} daha fazla kazandırdı!`
+              : `Faize yatırsaydınız ${formatTL(Math.abs(difference))} daha fazla kazanırdınız.`}
           </Text>
         </View>
       </View>
@@ -261,7 +262,7 @@ export function AnalysisScreen() {
           </View>
           <View style={styles.metricItem}>
             <Text style={styles.metricValue}>
-              ₺{totalPortfolioValue.toFixed(0)}
+              {formatTL(totalPortfolioValue, 0)}
             </Text>
             <Text style={styles.metricLabel}>Portföy Değeri</Text>
           </View>
@@ -297,20 +298,20 @@ export function AnalysisScreen() {
         </Text>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Toplam Yatırım:</Text>
-          <Text style={styles.summaryValue}>₺{totalCost.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatTL(totalCost)}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Güncel Değer:</Text>
-          <Text style={styles.summaryValue}>₺{totalPortfolioValue.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatTL(totalPortfolioValue)}</Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Nakit Bakiye:</Text>
-          <Text style={styles.summaryValue}>₺{account.balance.toFixed(2)}</Text>
+          <Text style={styles.summaryValue}>{formatTL(account.balance)}</Text>
         </View>
         <View style={[styles.summaryRow, styles.totalRow]}>
           <Text style={styles.summaryLabel}>Toplam Varlık:</Text>
           <Text style={[styles.summaryValue, { color: COLORS.primary, fontSize: 18 }]}>
-            ₺{(totalPortfolioValue + account.balance).toFixed(2)}
+            {formatTL(totalPortfolioValue + account.balance)}
           </Text>
         </View>
       </View>

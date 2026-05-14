@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,17 +6,23 @@ import {
   ScrollView,
   TouchableOpacity,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
 import { Stock } from '../types';
 import { usePortfolioStore } from '../store/usePortfolioStore';
+import { useWatchlistStore } from '../store/useWatchlistStore';
+import { TradeModal } from '../components/TradeModal';
+import { formatTL, formatVolume } from '../utils/format';
 
 export function StockDetailScreen() {
   const route = useRoute<any>();
-  const navigation = useNavigation<any>();
   const { stock } = route.params as { stock: Stock };
   const { portfolio } = usePortfolioStore();
+  const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlistStore();
+  const [showTrade, setShowTrade] = useState(false);
+
+  const isWatched = watchlist.includes(stock.symbol);
 
   // Bu hisseden portföyde var mı?
   const portfolioItems = portfolio.filter((p) => p.symbol === stock.symbol);
@@ -28,41 +34,55 @@ export function StockDetailScreen() {
   const avgCost = totalOwned > 0 ? totalCost / totalOwned : 0;
   const currentValue = totalOwned * stock.price;
   const pnl = currentValue - totalCost;
+  const pnlPercent = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       {/* Fiyat Kartı */}
       <View style={styles.priceCard}>
-        <Text style={styles.symbol}>{stock.symbol}</Text>
+        <View style={styles.priceHeader}>
+          <Text style={styles.symbol}>{stock.symbol}</Text>
+          <TouchableOpacity
+            onPress={() => isWatched ? removeFromWatchlist(stock.symbol) : addToWatchlist(stock.symbol)}
+          >
+            <Ionicons
+              name={isWatched ? 'eye' : 'eye-outline'}
+              size={24}
+              color={isWatched ? COLORS.primary : COLORS.textMuted}
+            />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.name}>{stock.name}</Text>
 
         <Text style={styles.price}>
-          {stock.price > 0 ? `₺${stock.price.toFixed(2)}` : 'Veri yok'}
+          {stock.price > 0 ? formatTL(stock.price) : 'Veri yok'}
         </Text>
 
-        <View
-          style={[
-            styles.changeBadge,
-            {
-              backgroundColor:
-                stock.change >= 0 ? COLORS.success + '20' : COLORS.danger + '20',
-            },
-          ]}
-        >
-          <Ionicons
-            name={stock.change >= 0 ? 'arrow-up' : 'arrow-down'}
-            size={16}
-            color={stock.change >= 0 ? COLORS.success : COLORS.danger}
-          />
-          <Text
+        {stock.price > 0 && (
+          <View
             style={[
-              styles.changeText,
-              { color: stock.change >= 0 ? COLORS.success : COLORS.danger },
+              styles.changeBadge,
+              {
+                backgroundColor:
+                  stock.change >= 0 ? COLORS.success + '20' : COLORS.danger + '20',
+              },
             ]}
           >
-            %{Math.abs(stock.change).toFixed(2)}
-          </Text>
-        </View>
+            <Ionicons
+              name={stock.change >= 0 ? 'arrow-up' : 'arrow-down'}
+              size={16}
+              color={stock.change >= 0 ? COLORS.success : COLORS.danger}
+            />
+            <Text
+              style={[
+                styles.changeText,
+                { color: stock.change >= 0 ? COLORS.success : COLORS.danger },
+              ]}
+            >
+              %{Math.abs(stock.change).toFixed(2)}
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.lastUpdated}>
           Son güncelleme: {new Date(stock.lastUpdated).toLocaleTimeString('tr-TR')}
@@ -73,11 +93,9 @@ export function StockDetailScreen() {
       <View style={styles.detailCard}>
         <Text style={styles.cardTitle}>Piyasa Bilgileri</Text>
         <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>İşlem Hacmi</Text>
+          <Text style={styles.detailLabel}>Fiyat</Text>
           <Text style={styles.detailValue}>
-            {stock.volume > 0
-              ? stock.volume.toLocaleString('tr-TR')
-              : '—'}
+            {stock.price > 0 ? formatTL(stock.price) : '—'}
           </Text>
         </View>
         <View style={styles.detailRow}>
@@ -88,7 +106,15 @@ export function StockDetailScreen() {
               { color: stock.change >= 0 ? COLORS.success : COLORS.danger },
             ]}
           >
-            %{stock.change.toFixed(2)}
+            {stock.change >= 0 ? '+' : ''}%{stock.change.toFixed(2)}
+          </Text>
+        </View>
+        <View style={styles.detailRow}>
+          <Text style={styles.detailLabel}>İşlem Hacmi</Text>
+          <Text style={styles.detailValue}>
+            {stock.volume > 0
+              ? formatVolume(stock.volume)
+              : '—'}
           </Text>
         </View>
       </View>
@@ -103,26 +129,33 @@ export function StockDetailScreen() {
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Ortalama Maliyet</Text>
-            <Text style={styles.detailValue}>₺{avgCost.toFixed(2)}</Text>
+            <Text style={styles.detailValue}>{formatTL(avgCost)}</Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Toplam Maliyet</Text>
-            <Text style={styles.detailValue}>₺{totalCost.toFixed(2)}</Text>
+            <Text style={styles.detailValue}>{formatTL(totalCost)}</Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Güncel Değer</Text>
-            <Text style={styles.detailValue}>₺{currentValue.toFixed(2)}</Text>
+            <Text style={styles.detailValue}>{formatTL(currentValue)}</Text>
           </View>
           <View style={[styles.detailRow, styles.pnlRow]}>
             <Text style={styles.detailLabel}>Kar / Zarar</Text>
-            <Text
-              style={[
-                styles.pnlValue,
-                { color: pnl >= 0 ? COLORS.success : COLORS.danger },
-              ]}
-            >
-              {pnl >= 0 ? '+' : ''}₺{pnl.toFixed(2)}
-            </Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text
+                style={[
+                  styles.pnlValue,
+                  { color: pnl >= 0 ? COLORS.success : COLORS.danger },
+                ]}
+              >
+                {pnl >= 0 ? '+' : ''}{formatTL(pnl)}
+              </Text>
+              <Text
+                style={{ color: pnl >= 0 ? COLORS.success : COLORS.danger, fontSize: 12 }}
+              >
+                ({pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%)
+              </Text>
+            </View>
           </View>
         </View>
       )}
@@ -131,19 +164,30 @@ export function StockDetailScreen() {
       <View style={styles.actionButtons}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: COLORS.success }]}
-          onPress={() => navigation.navigate('Main', { screen: 'İşlem' })}
+          onPress={() => setShowTrade(true)}
         >
           <Ionicons name="cart" size={20} color="#fff" />
-          <Text style={styles.actionButtonText}>AL</Text>
+          <Text style={styles.actionButtonText}>AL / SAT</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: COLORS.danger }]}
-          onPress={() => navigation.navigate('Main', { screen: 'İşlem' })}
+          style={[styles.actionButton, { backgroundColor: isWatched ? COLORS.textMuted : COLORS.primary }]}
+          onPress={() => isWatched ? removeFromWatchlist(stock.symbol) : addToWatchlist(stock.symbol)}
         >
-          <Ionicons name="cash" size={20} color="#fff" />
-          <Text style={styles.actionButtonText}>SAT</Text>
+          <Ionicons name={isWatched ? 'eye-off' : 'eye'} size={20} color="#fff" />
+          <Text style={styles.actionButtonText}>
+            {isWatched ? 'Takipten Çıkar' : 'Takip Et'}
+          </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Trade Modal */}
+      <TradeModal
+        visible={showTrade}
+        onClose={() => setShowTrade(false)}
+        symbol={stock.symbol}
+        name={stock.name}
+        currentPrice={stock.price}
+      />
     </ScrollView>
   );
 }
@@ -165,6 +209,12 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     alignItems: 'center',
     marginBottom: SPACING.md,
+  },
+  priceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
   },
   symbol: {
     color: COLORS.primary,
@@ -262,7 +312,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
   },
 });

@@ -5,9 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
 
 // Screens
+import { WatchlistScreen } from '../screens/WatchlistScreen';
 import { MarketScreen } from '../screens/MarketScreen';
 import { PortfolioScreen } from '../screens/PortfolioScreen';
-import { TradeScreen } from '../screens/TradeScreen';
 import { AccountScreen } from '../screens/AccountScreen';
 import { AnalysisScreen } from '../screens/AnalysisScreen';
 import { StockDetailScreen } from '../screens/StockDetailScreen';
@@ -23,17 +23,17 @@ function TabNavigator() {
           let iconName: keyof typeof Ionicons.glyphMap = 'home';
 
           switch (route.name) {
+            case 'Takip':
+              iconName = focused ? 'eye' : 'eye-outline';
+              break;
             case 'Piyasa':
               iconName = focused ? 'trending-up' : 'trending-up-outline';
               break;
             case 'Portföy':
               iconName = focused ? 'briefcase' : 'briefcase-outline';
               break;
-            case 'İşlem':
-              iconName = focused ? 'swap-horizontal' : 'swap-horizontal-outline';
-              break;
-            case 'Hesap':
-              iconName = focused ? 'wallet' : 'wallet-outline';
+            case 'İşlemler':
+              iconName = focused ? 'receipt' : 'receipt-outline';
               break;
             case 'Analiz':
               iconName = focused ? 'analytics' : 'analytics-outline';
@@ -61,10 +61,10 @@ function TabNavigator() {
         },
       })}
     >
+      <Tab.Screen name="Takip" component={WatchlistScreen} />
       <Tab.Screen name="Piyasa" component={MarketScreen} />
       <Tab.Screen name="Portföy" component={PortfolioScreen} />
-      <Tab.Screen name="İşlem" component={TradeScreen} />
-      <Tab.Screen name="Hesap" component={AccountScreen} />
+      <Tab.Screen name="İşlemler" component={AccountScreen} />
       <Tab.Screen name="Analiz" component={AnalysisScreen} />
     </Tab.Navigator>
   );
