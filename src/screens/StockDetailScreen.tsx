@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,14 +16,38 @@ import { useWatchlistStore } from '../store/useWatchlistStore';
 import { TradeModal } from '../components/TradeModal';
 import { formatTL, formatVolume } from '../utils/format';
 
+interface HistoryItem {
+  date: string;
+  close: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  change: number;
+}
+
 export function StockDetailScreen() {
   const route = useRoute<any>();
   const { stock } = route.params as { stock: Stock };
   const { portfolio } = usePortfolioStore();
   const { watchlist, addToWatchlist, removeFromWatchlist } = useWatchlistStore();
   const [showTrade, setShowTrade] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   const isWatched = watchlist.includes(stock.symbol);
+
+  // Geçmiş verileri çek
+  useEffect(() => {
+    setHistoryLoading(true);
+    fetch(`http://localhost:3001/api/history/${stock.symbol}?days=30`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.data) setHistory(data.data);
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }, [stock.symbol]);
 
   // Bu hisseden portföyde var mı?
   const portfolioItems = portfolio.filter((p) => p.symbol === stock.symbol);
@@ -180,6 +205,65 @@ export function StockDetailScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Son 1 Aylık Veriler */}
+      <View style={styles.historyCard}>
+        <Text style={styles.cardTitle}>Son 1 Aylık Veriler</Text>
+        {historyLoading ? (
+          <ActivityIndicator size="small" color={COLORS.primary} style={{ padding: SPACING.lg }} />
+        ) : history.length === 0 ? (
+          <Text style={styles.noDataText}>Geçmiş veri bulunamadı</Text>
+        ) : (
+          <>
+            {/* Tablo Başlığı */}
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, { flex: 2 }]}>Tarih</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>Kapanış</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>Açılış</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>Yüksek</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>Düşük</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1.5 }]}>Hacim</Text>
+              <Text style={[styles.tableHeaderText, { flex: 1.2, textAlign: 'right' }]}>Fark %</Text>
+            </View>
+
+            {/* Tablo Satırları */}
+            {history.map((item, index) => {
+              const date = new Date(item.date);
+              const dateStr = date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+              const isPositive = item.change >= 0;
+
+              return (
+                <View key={item.date} style={[styles.tableRow, index % 2 === 0 && styles.tableRowAlt]}>
+                  <Text style={[styles.tableCell, { flex: 2 }]}>{dateStr}</Text>
+                  <Text style={[styles.tableCellBold, { flex: 1.5, color: isPositive ? COLORS.success : COLORS.danger }]}>
+                    {item.close.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 1.5 }]}>
+                    {item.open.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 1.5 }]}>
+                    {item.high.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 1.5 }]}>
+                    {item.low.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text style={[styles.tableCell, { flex: 1.5 }]}>
+                    {formatVolume(item.volume)}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.tableCellBold,
+                      { flex: 1.2, textAlign: 'right', color: isPositive ? COLORS.success : COLORS.danger },
+                    ]}
+                  >
+                    {isPositive ? '+' : ''}{item.change.toFixed(2)}%
+                  </Text>
+                </View>
+              );
+            })}
+          </>
+        )}
+      </View>
+
       {/* Trade Modal */}
       <TradeModal
         visible={showTrade}
@@ -300,6 +384,7 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: 'row',
     gap: SPACING.md,
+    marginBottom: SPACING.md,
   },
   actionButton: {
     flex: 1,
@@ -313,6 +398,48 @@ const styles = StyleSheet.create({
   actionButtonText: {
     color: '#fff',
     fontSize: 15,
+    fontWeight: '700',
+  },
+  historyCard: {
+    backgroundColor: COLORS.surface,
+    padding: SPACING.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  noDataText: {
+    color: COLORS.textMuted,
+    fontSize: 14,
+    textAlign: 'center',
+    padding: SPACING.lg,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    marginBottom: SPACING.xs,
+  },
+  tableHeaderText: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: SPACING.sm,
+    alignItems: 'center',
+  },
+  tableRowAlt: {
+    backgroundColor: COLORS.background + '80',
+    borderRadius: 4,
+  },
+  tableCell: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+  },
+  tableCellBold: {
+    fontSize: 12,
     fontWeight: '700',
   },
 });
