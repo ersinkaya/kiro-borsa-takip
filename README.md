@@ -101,3 +101,34 @@ Uygulama TradingView Scanner API kullanarak BIST hisse fiyatlarını çeker. Bu 
 - Para birimleri Türkçe formatta gösterilir (₺1.234.567,89)
 - Veriler cihazda yerel olarak saklanır (AsyncStorage)
 - Tunnel modu ile farklı WiFi ağından da telefonla bağlanabilirsiniz
+
+## Docker ile Çalıştırma
+
+Uygulama Docker ile tek komutla ayağa kaldırılabilir. Web app ve API aynı container'da port 3000'den sunulur.
+
+### Lokal Build
+
+```bash
+docker compose up --build
+```
+
+Uygulama: http://localhost:3000
+
+### GitHub Container Registry'den Çekme
+
+```bash
+docker pull ghcr.io/ersinkaya/kiro-borsa-takip:latest
+docker run -p 3000:3000 ghcr.io/ersinkaya/kiro-borsa-takip:latest
+```
+
+### CI/CD
+
+Her `main` branch'e push yapıldığında GitHub Actions otomatik olarak Docker image build edip `ghcr.io/ersinkaya/kiro-borsa-takip:latest` adresine push eder.
+
+### Herhangi Bir Sunucuya Deploy
+
+```bash
+# Sunucuda
+docker pull ghcr.io/ersinkaya/kiro-borsa-takip:latest
+docker run -d -p 80:3000 --restart unless-stopped ghcr.io/ersinkaya/kiro-borsa-takip:latest
+```
