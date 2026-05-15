@@ -17,9 +17,19 @@ import { showAlert, showConfirm } from '../utils/alert';
 import { formatTL } from '../utils/format';
 
 export function PortfolioScreen() {
-  const { portfolio, account, updateCurrentPrices, loadData, deposit, withdraw } = usePortfolioStore();
+  const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction } = usePortfolioStore();
   const { stocks } = useStockStore();
   const [depositAmount, setDepositAmount] = useState('');
+  const [undoMessage, setUndoMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const handleUndo = async () => {
+    const result = await undoLastTransaction();
+    setUndoMessage({
+      text: result.success ? 'Son işlem geri alındı' : (result.message || 'Geri alınamadı'),
+      type: result.success ? 'success' : 'error',
+    });
+    setTimeout(() => setUndoMessage(null), 4000);
+  };
 
   useEffect(() => {
     loadData();
@@ -222,8 +232,42 @@ export function PortfolioScreen() {
               <Text style={styles.withdrawButtonText}>Çek</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Son İşlemi Geri Al */}
+          {transactions.length > 0 && (
+            <TouchableOpacity style={styles.undoLastButton} onPress={handleUndo}>
+              <Ionicons name="arrow-undo" size={16} color={COLORS.warning} />
+              <Text style={styles.undoLastText}>
+                Son işlemi geri al ({transactions[0].type === 'BUY' ? 'Alış' : transactions[0].type === 'SELL' ? 'Satış' : transactions[0].type === 'DEPOSIT' ? 'Yatırım' : 'Çekim'} - {transactions[0].symbol || formatTL(transactions[0].totalAmount)})
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
+
+      {/* Geri Alma Mesajı */}
+      {undoMessage && (
+        <View
+          style={[
+            styles.undoBanner,
+            { backgroundColor: undoMessage.type === 'success' ? COLORS.success + '20' : COLORS.warning + '20' },
+          ]}
+        >
+          <Ionicons
+            name={undoMessage.type === 'success' ? 'checkmark-circle' : 'warning'}
+            size={18}
+            color={undoMessage.type === 'success' ? COLORS.success : COLORS.warning}
+          />
+          <Text
+            style={[
+              styles.undoBannerText,
+              { color: undoMessage.type === 'success' ? COLORS.success : COLORS.warning },
+            ]}
+          >
+            {undoMessage.text}
+          </Text>
+        </View>
+      )}
 
       {/* Portföy Listesi */}
       {portfolio.length === 0 ? (
@@ -382,6 +426,37 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 13,
     fontWeight: '600',
+  },
+  undoLastButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.warning + '15',
+    borderWidth: 1,
+    borderColor: COLORS.warning + '40',
+    borderRadius: 8,
+    paddingVertical: SPACING.xs + 2,
+    marginTop: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  undoLastText: {
+    color: COLORS.warning,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  undoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginHorizontal: SPACING.md,
+    padding: SPACING.sm,
+    borderRadius: 8,
+    marginBottom: SPACING.sm,
+  },
+  undoBannerText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
   },
   emptyContainer: {
     flex: 1,

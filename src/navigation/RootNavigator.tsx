@@ -10,6 +10,7 @@ import { MarketScreen } from '../screens/MarketScreen';
 import { PortfolioScreen } from '../screens/PortfolioScreen';
 import { AccountScreen } from '../screens/AccountScreen';
 import { AnalysisScreen } from '../screens/AnalysisScreen';
+import { ProfileScreen } from '../screens/ProfileScreen';
 import { StockDetailScreen } from '../screens/StockDetailScreen';
 
 const Tab = createBottomTabNavigator();
@@ -37,6 +38,9 @@ function TabNavigator() {
               break;
             case 'Analiz':
               iconName = focused ? 'analytics' : 'analytics-outline';
+              break;
+            case 'Profil':
+              iconName = focused ? 'person' : 'person-outline';
               break;
           }
 
@@ -66,6 +70,7 @@ function TabNavigator() {
       <Tab.Screen name="Portföy" component={PortfolioScreen} />
       <Tab.Screen name="İşlemler" component={AccountScreen} />
       <Tab.Screen name="Analiz" component={AnalysisScreen} />
+      <Tab.Screen name="Profil" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }

@@ -1,109 +1,172 @@
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '../services/supabase';
 
 export interface WatchlistGroup {
   id: string;
   name: string;
   symbols: string[];
+  is_default?: boolean;
 }
 
 interface WatchlistState {
   groups: WatchlistGroup[];
   activeGroupId: string;
+  loading: boolean;
 
   // Grup yönetimi
-  addGroup: (name: string) => void;
-  removeGroup: (id: string) => void;
-  renameGroup: (id: string, name: string) => void;
+  addGroup: (name: string) => Promise<void>;
+  removeGroup: (id: string) => Promise<void>;
+  renameGroup: (id: string, name: string) => Promise<void>;
   setActiveGroup: (id: string) => void;
 
   // Hisse yönetimi
-  addToGroup: (groupId: string, symbol: string) => void;
-  removeFromGroup: (groupId: string, symbol: string) => void;
+  addToGroup: (groupId: string, symbol: string) => Promise<void>;
+  removeFromGroup: (groupId: string, symbol: string) => Promise<void>;
   isInGroup: (groupId: string, symbol: string) => boolean;
 
-  // Aktif gruptaki hisseler (kısayol)
+  // Aktif gruptaki hisseler
   getActiveSymbols: () => string[];
-  addToActive: (symbol: string) => void;
-  removeFromActive: (symbol: string) => void;
+  addToActive: (symbol: string) => Promise<void>;
+  removeFromActive: (symbol: string) => Promise<void>;
 
   // Eski uyumluluk
   watchlist: string[];
-  addToWatchlist: (symbol: string) => void;
-  removeFromWatchlist: (symbol: string) => void;
+  addToWatchlist: (symbol: string) => Promise<void>;
+  removeFromWatchlist: (symbol: string) => Promise<void>;
   isInWatchlist: (symbol: string) => boolean;
 
   loadWatchlist: () => Promise<void>;
-  saveWatchlist: () => Promise<void>;
 }
 
-const DEFAULT_GROUP: WatchlistGroup = {
-  id: 'default',
-  name: 'Takip Listem',
-  symbols: [],
-};
-
-const generateId = () => Math.random().toString(36).substring(2, 10);
-
 export const useWatchlistStore = create<WatchlistState>((set, get) => ({
-  groups: [DEFAULT_GROUP],
-  activeGroupId: 'default',
+  groups: [],
+  activeGroupId: '',
+  loading: false,
 
-  // Eski uyumluluk - aktif grubun sembolleri
   get watchlist() {
     return get().getActiveSymbols();
   },
 
-  addGroup: (name) => {
-    const newGroup: WatchlistGroup = { id: generateId(), name, symbols: [] };
-    set((state) => ({ groups: [...state.groups, newGroup] }));
-    get().saveWatchlist();
+  loadWatchlist: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    set({ loading: true });
+    try {
+      // Grupları çek
+      const { data: groupsData } = await supabase
+        .from('watchlist_groups')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
+
+      if (!groupsData || groupsData.length === 0) {
+        set({ loading: false });
+        return;
+      }
+
+      // Tüm hisseleri çek
+      const { data: itemsData } = await supabase
+        .from('watchlist_items')
+        .select('*')
+        .eq('user_id', user.id);
+
+      // Grupları hisseleriyle birleştir
+      const groups: WatchlistGroup[] = groupsData.map((g) => ({
+        id: g.id,
+        name: g.name,
+        is_default: g.is_default,
+        symbols: itemsData?.filter((i) => i.group_id === g.id).map((i) => i.symbol) || [],
+      }));
+
+      const defaultGroup = groups.find((g) => g.is_default) || groups[0];
+
+      set({
+        groups,
+        activeGroupId: get().activeGroupId || defaultGroup?.id || '',
+      });
+    } catch (error) {
+      console.error('Watchlist yükleme hatası:', error);
+    } finally {
+      set({ loading: false });
+    }
   },
 
-  removeGroup: (id) => {
-    if (id === 'default') return; // Varsayılan grup silinemez
+  addGroup: async (name) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('watchlist_groups')
+      .insert({ user_id: user.id, name, is_default: false })
+      .select()
+      .single();
+
+    if (error || !data) return;
+
+    set((state) => ({
+      groups: [...state.groups, { id: data.id, name: data.name, symbols: [], is_default: false }],
+    }));
+  },
+
+  removeGroup: async (id) => {
+    const group = get().groups.find((g) => g.id === id);
+    if (!group || group.is_default) return;
+
+    await supabase.from('watchlist_groups').delete().eq('id', id);
+
     set((state) => {
       const newGroups = state.groups.filter((g) => g.id !== id);
-      const newActiveId = state.activeGroupId === id ? 'default' : state.activeGroupId;
+      const newActiveId = state.activeGroupId === id
+        ? newGroups.find((g) => g.is_default)?.id || newGroups[0]?.id || ''
+        : state.activeGroupId;
       return { groups: newGroups, activeGroupId: newActiveId };
     });
-    get().saveWatchlist();
   },
 
-  renameGroup: (id, name) => {
+  renameGroup: async (id, name) => {
+    await supabase.from('watchlist_groups').update({ name }).eq('id', id);
     set((state) => ({
       groups: state.groups.map((g) => (g.id === id ? { ...g, name } : g)),
     }));
-    get().saveWatchlist();
   },
 
   setActiveGroup: (id) => {
     set({ activeGroupId: id });
-    get().saveWatchlist();
   },
 
-  addToGroup: (groupId, symbol) => {
+  addToGroup: async (groupId, symbol) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const group = get().groups.find((g) => g.id === groupId);
+    if (!group || group.symbols.includes(symbol)) return;
+
+    const { error } = await supabase
+      .from('watchlist_items')
+      .insert({ user_id: user.id, group_id: groupId, symbol });
+
+    if (error) return;
+
     set((state) => ({
-      groups: state.groups.map((g) => {
-        if (g.id === groupId && !g.symbols.includes(symbol)) {
-          return { ...g, symbols: [...g.symbols, symbol] };
-        }
-        return g;
-      }),
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, symbols: [...g.symbols, symbol] } : g
+      ),
     }));
-    get().saveWatchlist();
   },
 
-  removeFromGroup: (groupId, symbol) => {
+  removeFromGroup: async (groupId, symbol) => {
+    await supabase
+      .from('watchlist_items')
+      .delete()
+      .eq('group_id', groupId)
+      .eq('symbol', symbol);
+
     set((state) => ({
-      groups: state.groups.map((g) => {
-        if (g.id === groupId) {
-          return { ...g, symbols: g.symbols.filter((s) => s !== symbol) };
-        }
-        return g;
-      }),
+      groups: state.groups.map((g) =>
+        g.id === groupId ? { ...g, symbols: g.symbols.filter((s) => s !== symbol) } : g
+      ),
     }));
-    get().saveWatchlist();
   },
 
   isInGroup: (groupId, symbol) => {
@@ -113,65 +176,14 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
 
   getActiveSymbols: () => {
     const { groups, activeGroupId } = get();
-    const group = groups.find((g) => g.id === activeGroupId);
-    return group?.symbols || [];
+    return groups.find((g) => g.id === activeGroupId)?.symbols || [];
   },
 
-  addToActive: (symbol) => {
-    get().addToGroup(get().activeGroupId, symbol);
-  },
-
-  removeFromActive: (symbol) => {
-    get().removeFromGroup(get().activeGroupId, symbol);
-  },
+  addToActive: (symbol) => get().addToGroup(get().activeGroupId, symbol),
+  removeFromActive: (symbol) => get().removeFromGroup(get().activeGroupId, symbol),
 
   // Eski uyumluluk
-  addToWatchlist: (symbol) => {
-    get().addToActive(symbol);
-  },
-
-  removeFromWatchlist: (symbol) => {
-    get().removeFromActive(symbol);
-  },
-
-  isInWatchlist: (symbol) => {
-    return get().isInGroup(get().activeGroupId, symbol);
-  },
-
-  loadWatchlist: async () => {
-    try {
-      const data = await AsyncStorage.getItem('watchlist-groups');
-      if (data) {
-        const parsed = JSON.parse(data);
-        set({
-          groups: parsed.groups || [DEFAULT_GROUP],
-          activeGroupId: parsed.activeGroupId || 'default',
-        });
-      } else {
-        // Eski format uyumluluğu
-        const oldData = await AsyncStorage.getItem('watchlist-data');
-        if (oldData) {
-          const symbols = JSON.parse(oldData);
-          set({
-            groups: [{ ...DEFAULT_GROUP, symbols }],
-            activeGroupId: 'default',
-          });
-        }
-      }
-    } catch (error) {
-      console.error('Takip listesi yüklenirken hata:', error);
-    }
-  },
-
-  saveWatchlist: async () => {
-    try {
-      const { groups, activeGroupId } = get();
-      await AsyncStorage.setItem(
-        'watchlist-groups',
-        JSON.stringify({ groups, activeGroupId })
-      );
-    } catch (error) {
-      console.error('Takip listesi kaydedilirken hata:', error);
-    }
-  },
+  addToWatchlist: (symbol) => get().addToActive(symbol),
+  removeFromWatchlist: (symbol) => get().removeFromActive(symbol),
+  isInWatchlist: (symbol) => get().isInGroup(get().activeGroupId, symbol),
 }));
