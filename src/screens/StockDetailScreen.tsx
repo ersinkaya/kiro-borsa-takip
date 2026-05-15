@@ -40,7 +40,9 @@ export function StockDetailScreen() {
   // Geçmiş verileri çek
   useEffect(() => {
     setHistoryLoading(true);
-    fetch(`http://localhost:3001/api/history/${stock.symbol}?days=30`)
+    const port = typeof window !== 'undefined' ? window.location?.port : '';
+    const apiBase = port === '8081' ? 'http://localhost:3001' : '';
+    fetch(`${apiBase}/api/history/${stock.symbol}?days=30`)
       .then((r) => r.json())
       .then((data) => {
         if (data.data) setHistory(data.data);

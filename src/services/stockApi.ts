@@ -6,7 +6,18 @@ import { BIST_STOCKS } from '../constants/stocks';
  * Gerçek zamanlı veri, CORS sorunu yok, ücretsiz.
  */
 
-const TRADINGVIEW_SCAN_URL = 'http://localhost:3001/api/stocks';
+const TRADINGVIEW_SCAN_URL = '/api/stocks';
+
+// Development'ta localhost:3001, production'da relative path
+const getApiBase = () => {
+  if (typeof window !== 'undefined' && window.location?.port === '8081') {
+    return 'http://localhost:3001';
+  }
+  return '';
+};
+
+const API_BASE = getApiBase();
+const SCAN_URL = API_BASE + TRADINGVIEW_SCAN_URL;
 
 /**
  * TradingView'den tüm BIST hisselerini çeker
@@ -23,7 +34,7 @@ async function fetchFromTradingView(): Promise<Stock[]> {
     range: [0, 700],
   };
 
-  const response = await fetch(TRADINGVIEW_SCAN_URL, {
+  const response = await fetch(SCAN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -102,7 +113,7 @@ export async function fetchSingleStockPrice(symbol: string): Promise<number | nu
       columns: ['close'],
     };
 
-    const response = await fetch(TRADINGVIEW_SCAN_URL, {
+    const response = await fetch(SCAN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -131,7 +142,7 @@ export async function fetchMultipleStockPrices(
       columns: ['name', 'close'],
     };
 
-    const response = await fetch(TRADINGVIEW_SCAN_URL, {
+    const response = await fetch(SCAN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

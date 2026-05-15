@@ -8,7 +8,6 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import QRCode from 'react-native-qrcode-svg';
 import { COLORS, SPACING } from '../constants/theme';
 
 interface QRCodeModalProps {
@@ -17,7 +16,6 @@ interface QRCodeModalProps {
 }
 
 export function QRCodeModal({ visible, onClose }: QRCodeModalProps) {
-  // Expo Go bağlantı URL'si - tunnel modu ile her yerden erişilebilir
   const expoUrl = 'exp://wkyulqk-razumuhin-8081.exp.direct';
 
   return (
@@ -35,28 +33,13 @@ export function QRCodeModal({ visible, onClose }: QRCodeModalProps) {
 
           <Text style={styles.title}>Mobil Bağlantı</Text>
           <Text style={styles.subtitle}>
-            Expo Go uygulamasıyla QR kodu okutun
+            Expo Go uygulamasıyla bağlanın
           </Text>
 
-          <View style={styles.qrContainer}>
-            {Platform.OS === 'web' ? (
-              <QRCode
-                value={expoUrl}
-                size={200}
-                backgroundColor="white"
-                color="black"
-              />
-            ) : (
-              <QRCode
-                value={expoUrl}
-                size={200}
-                backgroundColor="white"
-                color="black"
-              />
-            )}
+          <View style={styles.urlBox}>
+            <Ionicons name="phone-portrait-outline" size={40} color={COLORS.primary} />
+            <Text style={styles.urlText}>{expoUrl}</Text>
           </View>
-
-          <Text style={styles.urlText}>{expoUrl}</Text>
 
           <View style={styles.instructions}>
             <Text style={styles.instructionTitle}>Nasıl bağlanılır:</Text>
@@ -64,10 +47,10 @@ export function QRCodeModal({ visible, onClose }: QRCodeModalProps) {
               1. Telefonunuza Expo Go uygulamasını indirin
             </Text>
             <Text style={styles.instructionText}>
-              2. Aynı WiFi ağına bağlı olduğunuzdan emin olun
+              2. Expo Go'yu açın ve URL'yi girin
             </Text>
             <Text style={styles.instructionText}>
-              3. QR kodu Expo Go ile okutun
+              3. Veya terminaldeki QR kodu okutun
             </Text>
           </View>
         </View>
@@ -111,16 +94,19 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
     marginBottom: SPACING.lg,
   },
-  qrContainer: {
-    backgroundColor: 'white',
-    padding: SPACING.md,
+  urlBox: {
+    backgroundColor: COLORS.background,
+    padding: SPACING.lg,
     borderRadius: 12,
+    alignItems: 'center',
+    width: '100%',
   },
   urlText: {
     color: COLORS.primary,
     fontSize: 13,
-    marginTop: SPACING.md,
+    marginTop: SPACING.sm,
     fontFamily: Platform.OS === 'web' ? 'monospace' : 'System',
+    textAlign: 'center',
   },
   instructions: {
     marginTop: SPACING.lg,

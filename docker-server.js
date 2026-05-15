@@ -1,11 +1,14 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-// TradingView proxy endpoint
+// --- API Endpoints (Proxy) ---
+
+// TradingView proxy
 app.post('/api/stocks', async (req, res) => {
   try {
     const response = await fetch('https://scanner.tradingview.com/turkey/scan', {
@@ -26,15 +29,34 @@ app.post('/api/stocks', async (req, res) => {
   }
 });
 
-// Yahoo Finance geçmiş veri endpoint
+// Geçmiş veri endpoint - TradingView + Yahoo fallback
 app.get('/api/history/:symbol', async (req, res) => {
   try {
     const { symbol } = req.params;
     const days = parseInt(req.query.days) || 30;
+
+    // Önce TradingView'den dene
+    try {
+      const tvResponse = await fetch('https://scanner.tradingview.com/turkey/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbols: { tickers: [`BIST:${symbol}`] },
+          columns: ['close', 'open', 'high', 'low', 'volume', 'change', 'Perf.1M', 'High.1M', 'Low.1M'],
+        }),
+      });
+
+      if (tvResponse.ok) {
+        const tvData = await tvResponse.json();
+        // TradingView scanner sadece anlık veri verir, geçmiş için Yahoo'ya düş
+      }
+    } catch (e) {}
+
+    // Yahoo Finance
     const now = Math.floor(Date.now() / 1000);
     const from = now - days * 86400;
-
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.IS?interval=1d&period1=${from}&period2=${now}`;
+    
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -42,6 +64,7 @@ app.get('/api/history/:symbol', async (req, res) => {
     });
 
     if (!response.ok) {
+      // Yahoo başarısız - boş veri dön
       return res.json({ symbol, data: [] });
     }
 
@@ -77,7 +100,31 @@ app.get('/api/history/:symbol', async (req, res) => {
   }
 });
 
-const PORT = 3001;
-app.listen(PORT, () => {
-  console.log(`Proxy server running on http://localhost:${PORT}`);
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// --- Static Files (Expo Web Build) ---
+// Serve all static files from dist
+app.use(express.static(path.join(__dirname, 'dist'), {
+  maxAge: '1h',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    }
+  }
+}));
+
+// SPA fallback - only for navigation routes (not files)
+app.use((req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Borsa Takip running on http://0.0.0.0:${PORT}`);
+  console.log(`  - Web App: http://localhost:${PORT}`);
+  console.log(`  - API: http://localhost:${PORT}/api/stocks`);
+  console.log(`  - Health: http://localhost:${PORT}/api/health`);
 });
