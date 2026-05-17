@@ -124,9 +124,31 @@ app.get('/api/ai-analysis/:symbol', async (req, res) => {
   }
 
   try {
-    // Önce hisse fiyat verilerini çek
-    const historyRes = await fetch(`http://localhost:${process.env.PORT || 3000}/api/history/${symbol}?days=30`);
-    const historyData = await historyRes.json();
+    // Önce hisse fiyat verilerini Yahoo'dan çek
+    const days = 30;
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - days * 86400;
+    let priceHistory = [];
+
+    try {
+      const historyRes = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}.IS?interval=1d&period1=${from}&period2=${now}`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      );
+      if (historyRes.ok) {
+        const histData = await historyRes.json();
+        const result = histData.chart?.result?.[0];
+        if (result) {
+          const timestamps = result.timestamp || [];
+          const quote = result.indicators?.quote?.[0] || {};
+          priceHistory = timestamps.map((ts, i) => ({
+            date: new Date(ts * 1000).toISOString().split('T')[0],
+            close: quote.close?.[i] || 0,
+            change: 0,
+          })).filter(item => item.close > 0).slice(-20);
+        }
+      }
+    } catch (e) {}
 
     // TradingView'den güncel veri
     const tvRes = await fetch('https://scanner.tradingview.com/turkey/scan', {
@@ -140,7 +162,7 @@ app.get('/api/ai-analysis/:symbol', async (req, res) => {
     const tvData = await tvRes.json();
     const stockInfo = tvData.data?.[0]?.d || [];
 
-    const priceHistory = historyData.data || [];
+    const priceHistoryForPrompt = priceHistory;
     const currentPrice = stockInfo[1] || 0;
     const change = stockInfo[2] || 0;
     const volume = stockInfo[3] || 0;
@@ -169,7 +191,7 @@ RSI(14): ${rsi?.toFixed(1)}
 Hacim: ${volume}
 
 Son 1 aylık kapanış fiyatları (eskiden yeniye):
-${priceHistory.slice(0, 20).map(d => `${d.date}: ₺${d.close} (%${d.change})`).join('\n')}
+${priceHistoryForPrompt.slice(0, 20).map(d => `${d.date}: ₺${d.close}`).join('\n')}
 
 Lütfen şu formatta yanıt ver:
 📊 TREND: (Yükseliş/Düşüş/Yatay)
@@ -182,7 +204,7 @@ Not: Kısa ve öz yaz, maksimum 150 kelime. Yatırım tavsiyesi olmadığını b
 
     // Gemini API çağrısı
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
