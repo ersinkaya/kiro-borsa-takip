@@ -204,7 +204,7 @@ Not: Kısa ve öz yaz, maksimum 150 kelime. Yatırım tavsiyesi olmadığını b
 
     // Gemini API çağrısı
     const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
