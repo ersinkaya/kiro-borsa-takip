@@ -111,7 +111,7 @@ const AI_CACHE_TTL = 60 * 60 * 1000; // 1 saat
 
 app.get('/api/ai-analysis/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCMpzYB1UqNn4L9HdSiZTaaOPjumAxjezw';
 
   if (!GEMINI_API_KEY) {
     return res.json({ symbol, analysis: null, error: 'AI servisi yapılandırılmamış' });
