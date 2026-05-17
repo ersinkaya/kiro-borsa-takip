@@ -34,9 +34,17 @@ export function StockDetailScreen() {
   const [showTrade, setShowTrade] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState<number>(30);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const periods = [
+    { label: '1 Ay', days: 30 },
+    { label: '3 Ay', days: 90 },
+    { label: '6 Ay', days: 180 },
+    { label: '1 Yıl', days: 365 },
+  ];
 
   const isWatched = watchlist.includes(stock.symbol);
 
@@ -45,14 +53,25 @@ export function StockDetailScreen() {
     setHistoryLoading(true);
     const port = typeof window !== 'undefined' ? window.location?.port : '';
     const apiBase = port === '8081' ? 'http://localhost:3001' : '';
-    fetch(`${apiBase}/api/history/${stock.symbol}?days=30`)
+    fetch(`${apiBase}/api/history/${stock.symbol}?days=${selectedPeriod}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.data) setHistory(data.data);
       })
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
-  }, [stock.symbol]);
+  }, [stock.symbol, selectedPeriod]);
+
+  // Dönem kar/zarar hesapla
+  const periodPnL = (() => {
+    if (history.length < 2) return null;
+    const newest = history[0]?.close || 0;
+    const oldest = history[history.length - 1]?.close || 0;
+    if (oldest === 0) return null;
+    const changeTL = newest - oldest;
+    const changePercent = ((newest - oldest) / oldest) * 100;
+    return { changeTL, changePercent, newest, oldest };
+  })();
 
   // AI Analiz çek
   const fetchAiAnalysis = () => {
@@ -269,7 +288,54 @@ export function StockDetailScreen() {
 
       {/* Son 1 Aylık Veriler */}
       <View style={styles.historyCard}>
-        <Text style={styles.cardTitle}>Son 1 Aylık Veriler</Text>
+        {/* Dönem Seçici */}
+        <View style={styles.periodSelector}>
+          {periods.map((period) => (
+            <TouchableOpacity
+              key={period.days}
+              style={[
+                styles.periodButton,
+                selectedPeriod === period.days && styles.periodButtonActive,
+              ]}
+              onPress={() => setSelectedPeriod(period.days)}
+            >
+              <Text
+                style={[
+                  styles.periodButtonText,
+                  selectedPeriod === period.days && styles.periodButtonTextActive,
+                ]}
+              >
+                {period.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Dönem Kar/Zarar Özeti */}
+        {periodPnL && (
+          <View style={[styles.periodPnLCard, { backgroundColor: periodPnL.changePercent >= 0 ? COLORS.success + '10' : COLORS.danger + '10' }]}>
+            <View style={styles.periodPnLRow}>
+              <Text style={styles.periodPnLLabel}>
+                {periods.find(p => p.days === selectedPeriod)?.label} Performans:
+              </Text>
+              <View style={styles.periodPnLValues}>
+                <Text style={[styles.periodPnLPercent, { color: periodPnL.changePercent >= 0 ? COLORS.success : COLORS.danger }]}>
+                  {periodPnL.changePercent >= 0 ? '+' : ''}{periodPnL.changePercent.toFixed(2)}%
+                </Text>
+                <Text style={[styles.periodPnLTL, { color: periodPnL.changePercent >= 0 ? COLORS.success : COLORS.danger }]}>
+                  ({periodPnL.changeTL >= 0 ? '+' : ''}{formatTL(periodPnL.changeTL)})
+                </Text>
+              </View>
+            </View>
+            <View style={styles.periodPnLDetails}>
+              <Text style={styles.periodPnLDetailText}>
+                Dönem Başı: {formatTL(periodPnL.oldest)} → Dönem Sonu: {formatTL(periodPnL.newest)}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <Text style={styles.cardTitle}>Tarihsel Veriler</Text>
         {historyLoading ? (
           <ActivityIndicator size="small" color={COLORS.primary} style={{ padding: SPACING.lg }} />
         ) : history.length === 0 ? (
@@ -539,6 +605,63 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  periodSelector: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.background,
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: SPACING.md,
+  },
+  periodButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: 8,
+  },
+  periodButtonActive: {
+    backgroundColor: COLORS.primary,
+  },
+  periodButtonText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  periodButtonTextActive: {
+    color: '#fff',
+  },
+  periodPnLCard: {
+    padding: SPACING.md,
+    borderRadius: 10,
+    marginBottom: SPACING.md,
+  },
+  periodPnLRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  periodPnLLabel: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  periodPnLValues: {
+    alignItems: 'flex-end',
+  },
+  periodPnLPercent: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  periodPnLTL: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  periodPnLDetails: {
+    marginTop: SPACING.xs,
+  },
+  periodPnLDetailText: {
+    color: COLORS.textMuted,
+    fontSize: 11,
   },
   noDataText: {
     color: COLORS.textMuted,
