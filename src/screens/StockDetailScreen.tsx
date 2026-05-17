@@ -34,6 +34,9 @@ export function StockDetailScreen() {
   const [showTrade, setShowTrade] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const isWatched = watchlist.includes(stock.symbol);
 
@@ -50,6 +53,25 @@ export function StockDetailScreen() {
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
   }, [stock.symbol]);
+
+  // AI Analiz çek
+  const fetchAiAnalysis = () => {
+    setAiLoading(true);
+    setAiError(null);
+    const port = typeof window !== 'undefined' ? window.location?.port : '';
+    const apiBase = port === '8081' ? 'http://localhost:3001' : '';
+    fetch(`${apiBase}/api/ai-analysis/${stock.symbol}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.analysis) {
+          setAiAnalysis(data.analysis);
+        } else if (data.error) {
+          setAiError(data.error);
+        }
+      })
+      .catch(() => setAiError('Bağlantı hatası'))
+      .finally(() => setAiLoading(false));
+  };
 
   // Bu hisseden portföyde var mı?
   const portfolioItems = portfolio.filter((p) => p.symbol === stock.symbol);
@@ -205,6 +227,44 @@ export function StockDetailScreen() {
             {isWatched ? 'Takipten Çıkar' : 'Takip Et'}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Yapay Zeka Görüşü */}
+      <View style={styles.aiCard}>
+        <View style={styles.aiHeader}>
+          <Ionicons name="sparkles" size={20} color="#a855f7" />
+          <Text style={styles.aiTitle}>Yapay Zeka Görüşü</Text>
+        </View>
+
+        {aiAnalysis ? (
+          <View>
+            <Text style={styles.aiText}>{aiAnalysis}</Text>
+            <Text style={styles.aiDisclaimer}>
+              ⚠️ Bu bir yatırım tavsiyesi değildir. Yapay zeka tarafından üretilmiştir.
+            </Text>
+            <TouchableOpacity style={styles.aiRefreshButton} onPress={fetchAiAnalysis}>
+              <Ionicons name="refresh" size={14} color={COLORS.textMuted} />
+              <Text style={styles.aiRefreshText}>Yenile</Text>
+            </TouchableOpacity>
+          </View>
+        ) : aiLoading ? (
+          <View style={styles.aiLoadingContainer}>
+            <ActivityIndicator size="small" color="#a855f7" />
+            <Text style={styles.aiLoadingText}>Analiz hazırlanıyor...</Text>
+          </View>
+        ) : aiError ? (
+          <View>
+            <Text style={styles.aiErrorText}>{aiError}</Text>
+            <TouchableOpacity style={styles.aiButton} onPress={fetchAiAnalysis}>
+              <Text style={styles.aiButtonText}>Tekrar Dene</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.aiButton} onPress={fetchAiAnalysis}>
+            <Ionicons name="sparkles" size={16} color="#fff" />
+            <Text style={styles.aiButtonText}>AI Analiz İste</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Son 1 Aylık Veriler */}
@@ -401,6 +461,77 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
+  },
+  // AI Kartı
+  aiCard: {
+    backgroundColor: COLORS.surface,
+    padding: SPACING.lg,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#a855f7' + '40',
+    marginBottom: SPACING.md,
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  aiTitle: {
+    color: COLORS.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  aiText: {
+    color: COLORS.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  aiDisclaimer: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    marginTop: SPACING.md,
+    fontStyle: 'italic',
+  },
+  aiRefreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  aiRefreshText: {
+    color: COLORS.textMuted,
+    fontSize: 12,
+  },
+  aiLoadingContainer: {
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    gap: SPACING.sm,
+  },
+  aiLoadingText: {
+    color: '#a855f7',
+    fontSize: 13,
+  },
+  aiErrorText: {
+    color: COLORS.danger,
+    fontSize: 13,
+    marginBottom: SPACING.sm,
+  },
+  aiButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#a855f7',
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: 10,
+    gap: SPACING.xs,
+  },
+  aiButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   historyCard: {
     backgroundColor: COLORS.surface,

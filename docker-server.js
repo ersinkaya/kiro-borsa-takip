@@ -105,6 +105,118 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// --- AI Analysis Endpoint (Gemini) ---
+const AI_CACHE = new Map(); // { symbol: { data, timestamp } }
+const AI_CACHE_TTL = 60 * 60 * 1000; // 1 saat
+
+app.get('/api/ai-analysis/:symbol', async (req, res) => {
+  const { symbol } = req.params;
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+  if (!GEMINI_API_KEY) {
+    return res.json({ symbol, analysis: null, error: 'AI servisi yapılandırılmamış' });
+  }
+
+  // Cache kontrol
+  const cached = AI_CACHE.get(symbol);
+  if (cached && Date.now() - cached.timestamp < AI_CACHE_TTL) {
+    return res.json({ symbol, analysis: cached.data, cached: true });
+  }
+
+  try {
+    // Önce hisse fiyat verilerini çek
+    const historyRes = await fetch(`http://localhost:${process.env.PORT || 3000}/api/history/${symbol}?days=30`);
+    const historyData = await historyRes.json();
+
+    // TradingView'den güncel veri
+    const tvRes = await fetch('https://scanner.tradingview.com/turkey/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbols: { tickers: [`BIST:${symbol}`] },
+        columns: ['name', 'close', 'change', 'volume', 'High.1M', 'Low.1M', 'Perf.W', 'Perf.1M', 'Perf.3M', 'SMA20', 'SMA50', 'RSI'],
+      }),
+    });
+    const tvData = await tvRes.json();
+    const stockInfo = tvData.data?.[0]?.d || [];
+
+    const priceHistory = historyData.data || [];
+    const currentPrice = stockInfo[1] || 0;
+    const change = stockInfo[2] || 0;
+    const volume = stockInfo[3] || 0;
+    const high1M = stockInfo[4] || 0;
+    const low1M = stockInfo[5] || 0;
+    const perfWeek = stockInfo[6] || 0;
+    const perf1M = stockInfo[7] || 0;
+    const perf3M = stockInfo[8] || 0;
+    const sma20 = stockInfo[9] || 0;
+    const sma50 = stockInfo[10] || 0;
+    const rsi = stockInfo[11] || 0;
+
+    const prompt = `Sen bir borsa analisti ve teknik analizcisin. Aşağıdaki BIST hissesi hakkında Türkçe kısa bir teknik analiz ve görüş yaz.
+
+Hisse: ${symbol} (${stockInfo[0] || symbol})
+Güncel Fiyat: ₺${currentPrice}
+Günlük Değişim: %${change?.toFixed(2)}
+Haftalık Performans: %${perfWeek?.toFixed(2)}
+1 Aylık Performans: %${perf1M?.toFixed(2)}
+3 Aylık Performans: %${perf3M?.toFixed(2)}
+1 Aylık En Yüksek: ₺${high1M}
+1 Aylık En Düşük: ₺${low1M}
+SMA20: ₺${sma20?.toFixed(2)}
+SMA50: ₺${sma50?.toFixed(2)}
+RSI(14): ${rsi?.toFixed(1)}
+Hacim: ${volume}
+
+Son 1 aylık kapanış fiyatları (eskiden yeniye):
+${priceHistory.slice(0, 20).map(d => `${d.date}: ₺${d.close} (%${d.change})`).join('\n')}
+
+Lütfen şu formatta yanıt ver:
+📊 TREND: (Yükseliş/Düşüş/Yatay)
+📈 DESTEK: ₺X | DİRENÇ: ₺Y
+📉 TEKNİK GÖSTERGELER: (RSI, SMA yorumu)
+💡 KISA VADELI GÖRÜŞ: (2-3 cümle)
+⚠️ RİSKLER: (1-2 cümle)
+
+Not: Kısa ve öz yaz, maksimum 150 kelime. Yatırım tavsiyesi olmadığını belirt.`;
+
+    // Gemini API çağrısı
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500,
+          },
+        }),
+      }
+    );
+
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      console.error('Gemini API error:', errText);
+      return res.json({ symbol, analysis: null, error: 'AI analiz alınamadı' });
+    }
+
+    const geminiData = await geminiRes.json();
+    const analysis = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || null;
+
+    if (analysis) {
+      // Cache'e kaydet
+      AI_CACHE.set(symbol, { data: analysis, timestamp: Date.now() });
+    }
+
+    res.json({ symbol, analysis, cached: false });
+  } catch (error) {
+    console.error('AI analysis error:', error.message);
+    res.json({ symbol, analysis: null, error: 'AI analiz hatası' });
+  }
+});
+
 // --- Static Files (Expo Web Build) ---
 // Serve all static files from dist
 app.use(express.static(path.join(__dirname, 'dist'), {
