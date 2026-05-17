@@ -220,8 +220,8 @@ Not: Kısa ve öz yaz, maksimum 150 kelime. Yatırım tavsiyesi olmadığını b
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
-      console.error('Gemini API error:', errText);
-      return res.json({ symbol, analysis: null, error: 'AI analiz alınamadı' });
+      console.error('Gemini API error:', geminiRes.status, errText);
+      return res.json({ symbol, analysis: null, error: `Gemini API hata: ${geminiRes.status} - ${errText.substring(0, 200)}` });
     }
 
     const geminiData = await geminiRes.json();
@@ -235,7 +235,7 @@ Not: Kısa ve öz yaz, maksimum 150 kelime. Yatırım tavsiyesi olmadığını b
     res.json({ symbol, analysis, cached: false });
   } catch (error) {
     console.error('AI analysis error:', error.message);
-    res.json({ symbol, analysis: null, error: 'AI analiz hatası' });
+    res.json({ symbol, analysis: null, error: `AI analiz hatası: ${error.message}` });
   }
 });
 
