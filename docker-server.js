@@ -111,9 +111,9 @@ const AI_CACHE_TTL = 60 * 60 * 1000; // 1 saat
 
 app.get('/api/ai-analysis/:symbol', async (req, res) => {
   const { symbol } = req.params;
-  const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCMpzYB1UqNn4L9HdSiZTaaOPjumAxjezw';
+  const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 
-  if (!GEMINI_API_KEY) {
+  if (!GROQ_API_KEY) {
     return res.json({ symbol, analysis: null, error: 'AI servisi yapılandırılmamış' });
   }
 
@@ -202,30 +202,32 @@ Lütfen şu formatta yanıt ver:
 
 Not: Kısa ve öz yaz, maksimum 150 kelime. Yatırım tavsiyesi olmadığını belirt.`;
 
-    // Gemini API çağrısı
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 500,
-          },
-        }),
-      }
-    );
+    // Groq API çağrısı (Llama modeli)
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          { role: 'system', content: 'Sen bir borsa analisti ve teknik analizcisin. Türkçe yanıt ver. Kısa ve öz ol.' },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error('Gemini API error:', geminiRes.status, errText);
-      return res.json({ symbol, analysis: null, error: `Gemini API hata: ${geminiRes.status} - ${errText.substring(0, 200)}` });
+    if (!groqRes.ok) {
+      const errText = await groqRes.text();
+      console.error('Groq API error:', groqRes.status, errText);
+      return res.json({ symbol, analysis: null, error: `AI API hata: ${groqRes.status} - ${errText.substring(0, 200)}` });
     }
 
-    const geminiData = await geminiRes.json();
-    const analysis = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    const groqData = await groqRes.json();
+    const analysis = groqData.choices?.[0]?.message?.content || null;
 
     if (analysis) {
       // Cache'e kaydet
