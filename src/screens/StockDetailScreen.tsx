@@ -187,6 +187,23 @@ export function StockDetailScreen() {
         </View>
       </View>
 
+      {/* TradingView Grafik */}
+      <View style={styles.chartCard}>
+        <Text style={styles.cardTitle}>Teknik Grafik</Text>
+        <View style={styles.chartContainer}>
+          <iframe
+            src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol=BIST:${stock.symbol}&interval=D&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=f1f3f6&studies=RSI@tv-basicstudies&theme=dark&style=1&timezone=Europe/Istanbul&withdateranges=1&showpopupbutton=0&studies_overrides={}&overrides={}&enabled_features=[]&disabled_features=[]&locale=tr&utm_source=localhost&utm_medium=widget_new&utm_campaign=chart`}
+            style={{
+              width: '100%',
+              height: 450,
+              border: 'none',
+              borderRadius: 12,
+            }}
+            allowFullScreen
+          />
+        </View>
+      </View>
+
       {/* Portföy Bilgisi */}
       {totalOwned > 0 && (
         <View style={styles.portfolioCard}>
@@ -469,6 +486,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: SPACING.md,
+  },
+  chartCard: {
+    backgroundColor: COLORS.surface,
+    padding: SPACING.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: SPACING.md,
+  },
+  chartContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   portfolioCard: {
     backgroundColor: COLORS.surface,
