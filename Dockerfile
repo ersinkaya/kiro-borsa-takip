@@ -3,11 +3,11 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# sharp (PWA ikon üretimi) için sistem bağımlılıkları - npm ci'den ÖNCE olmalı
+RUN apk add --no-cache vips-dev build-base python3
+
 COPY package.json package-lock.json ./
 RUN npm ci
-
-# sharp build için sistem bağımlılıkları (PWA ikonları üretmek için)
-RUN apk add --no-cache vips-dev || true
 
 COPY . .
 
