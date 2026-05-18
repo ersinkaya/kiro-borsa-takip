@@ -82,6 +82,7 @@ export function PortfolioScreen() {
     const pnlPercent = item.totalCost > 0 ? (pnl / item.totalCost) * 100 : 0;
     const isProfit = pnl >= 0;
     const avgCost = item.totalQuantity > 0 ? item.totalCost / item.totalQuantity : 0;
+    const portfolioPercent = totalValue > 0 ? (currentValue / totalValue) * 100 : 0;
 
     return (
       <TouchableOpacity
@@ -92,6 +93,12 @@ export function PortfolioScreen() {
         <View style={styles.stockRowLeft}>
           <Text style={styles.stockSymbol}>{item.symbol}</Text>
           <Text style={styles.stockDetail}>{item.totalQuantity} adet · Ort: {formatTL(avgCost)}</Text>
+        </View>
+        <View style={styles.stockRowCenter}>
+          <View style={styles.percentBar}>
+            <View style={[styles.percentBarFill, { width: `${Math.min(portfolioPercent, 100)}%`, backgroundColor: COLORS.primary + '60' }]} />
+          </View>
+          <Text style={styles.percentText}>%{portfolioPercent.toFixed(1)}</Text>
         </View>
         <View style={styles.stockRowRight}>
           <Text style={[styles.stockPnL, { color: isProfit ? COLORS.success : COLORS.danger }]}>
@@ -338,6 +345,10 @@ const styles = StyleSheet.create({
   stockRowLeft: { flex: 1 },
   stockSymbol: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
   stockDetail: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
+  stockRowCenter: { width: 55, alignItems: 'center', marginHorizontal: SPACING.xs },
+  percentBar: { width: '100%', height: 4, backgroundColor: COLORS.border, borderRadius: 2, overflow: 'hidden' },
+  percentBarFill: { height: '100%', borderRadius: 2 },
+  percentText: { color: COLORS.textMuted, fontSize: 10, marginTop: 2 },
   stockRowRight: { alignItems: 'flex-end' },
   stockPnL: { fontSize: 14, fontWeight: '700' },
   stockPnLPercent: { fontSize: 11, marginTop: 1 },

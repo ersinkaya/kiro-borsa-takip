@@ -113,6 +113,139 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// --- İndikatör Tarama Endpoint ---
+app.get('/api/indicators/scan', async (req, res) => {
+  try {
+    // TradingView'den tüm BIST hisselerinin teknik verilerini çek
+    const body = {
+      filter: [
+        { left: 'exchange', operation: 'equal', right: 'BIST' },
+        { left: 'is_primary', operation: 'equal', right: true },
+      ],
+      columns: [
+        'name', 'close', 'change', 'volume',
+        'EMA20', 'EMA50', 'EMA200',
+        'SMA20', 'SMA50',
+        'RSI', 'RSI[1]',
+        'MACD.macd', 'MACD.signal',
+        'BB.upper', 'BB.lower', 'BB.basis',
+        'ADX', 'ADX+DI', 'ADX-DI',
+        'average_volume_10d_calc',
+        'average_volume_30d_calc',
+        'Perf.W', 'Perf.1M',
+        'High.1M', 'Low.1M',
+      ],
+      sort: { sortBy: 'volume', sortOrder: 'desc' },
+      range: [0, 700],
+    };
+
+    const response = await fetch('https://scanner.tradingview.com/turkey/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'TradingView API error' });
+    }
+
+    const data = await response.json();
+    const stocks = (data.data || []).map(item => {
+      const d = item.d || [];
+      return {
+        symbol: d[0] || '',
+        close: d[1] || 0,
+        change: d[2] || 0,
+        volume: d[3] || 0,
+        ema20: d[4],
+        ema50: d[5],
+        ema200: d[6],
+        sma20: d[7],
+        sma50: d[8],
+        rsi: d[9],
+        rsiPrev: d[10],
+        macd: d[11],
+        macdSignal: d[12],
+        bbUpper: d[13],
+        bbLower: d[14],
+        bbBasis: d[15],
+        adx: d[16],
+        adxPlus: d[17],
+        adxMinus: d[18],
+        avgVol10: d[19],
+        avgVol30: d[20],
+        perfWeek: d[21],
+        perf1M: d[22],
+        high1M: d[23],
+        low1M: d[24],
+      };
+    }).filter(s => s.symbol && s.close > 0);
+
+    // 6 İndikatör Senaryosu
+    const results = {
+      trendStart: [],       // 1) Trend başlangıcı
+      bottomReversal: [],   // 2) Dipten dönüş
+      squeeze: [],          // 3) Sıkışma (Bollinger)
+      strongTrend: [],      // 4) Güçlü trend devamı
+      breakout: [],         // 5) Kırılım
+      institutional: [],    // 6) Kurumsal giriş
+    };
+
+    for (const s of stocks) {
+      if (!s.ema20 || !s.ema50 || !s.rsi) continue;
+
+      // 1) Trend Başlangıcı: EMA20 > EMA50 (yakın kesişim), RSI > 50, Hacim yüksek
+      if (s.ema20 > s.ema50 && s.ema20 < s.ema50 * 1.02 && s.rsi > 50 && s.rsi < 70 && s.volume > (s.avgVol10 || s.volume) * 1.2) {
+        results.trendStart.push({ symbol: s.symbol, close: s.close, change: s.change, rsi: s.rsi, volume: s.volume, ema20: s.ema20, ema50: s.ema50 });
+      }
+
+      // 2) Dipten Dönüş: RSI önceden < 30, şimdi > 30, MACD yukarı kesişim, hacim artıyor
+      if (s.rsiPrev !== null && s.rsiPrev < 35 && s.rsi > 30 && s.rsi < 50 && s.macd > s.macdSignal && s.volume > (s.avgVol10 || s.volume)) {
+        results.bottomReversal.push({ symbol: s.symbol, close: s.close, change: s.change, rsi: s.rsi, rsiPrev: s.rsiPrev, macd: s.macd, volume: s.volume });
+      }
+
+      // 3) Sıkışma: Bollinger bantları dar, hacim artıyor, fiyat üst banda yakın
+      if (s.bbUpper && s.bbLower && s.bbBasis) {
+        const bandWidth = (s.bbUpper - s.bbLower) / s.bbBasis;
+        const pricePosition = (s.close - s.bbLower) / (s.bbUpper - s.bbLower);
+        if (bandWidth < 0.08 && pricePosition > 0.6 && s.volume > (s.avgVol10 || s.volume) * 0.9) {
+          results.squeeze.push({ symbol: s.symbol, close: s.close, change: s.change, bandWidth: (bandWidth * 100).toFixed(1), pricePosition: (pricePosition * 100).toFixed(0), volume: s.volume });
+        }
+      }
+
+      // 4) Güçlü Trend Devamı: EMA20 > EMA50 > EMA200, ADX > 25, RSI 50-70
+      if (s.ema200 && s.ema20 > s.ema50 && s.ema50 > s.ema200 && s.adx > 25 && s.rsi > 50 && s.rsi < 70) {
+        results.strongTrend.push({ symbol: s.symbol, close: s.close, change: s.change, adx: s.adx, rsi: s.rsi, ema20: s.ema20, ema50: s.ema50, ema200: s.ema200 });
+      }
+
+      // 5) Kırılım: Fiyat 1 aylık yüksek yakınında, hacim normalin 2x+, RSI 55-65
+      if (s.high1M && s.close > s.high1M * 0.97 && s.volume > (s.avgVol30 || s.volume) * 2 && s.rsi > 55 && s.rsi < 70) {
+        results.breakout.push({ symbol: s.symbol, close: s.close, change: s.change, rsi: s.rsi, volume: s.volume, avgVol: s.avgVol30, high1M: s.high1M });
+      }
+
+      // 6) Kurumsal Giriş: Fiyat yükseliyor, hacim artıyor, RSI güçlü
+      if (s.change > 0 && s.volume > (s.avgVol10 || s.volume) * 1.5 && s.rsi > 50 && s.rsi < 75 && s.perfWeek > 0) {
+        results.institutional.push({ symbol: s.symbol, close: s.close, change: s.change, rsi: s.rsi, volume: s.volume, avgVol: s.avgVol10, perfWeek: s.perfWeek });
+      }
+    }
+
+    // Her kategoride en fazla 20 hisse, hacme göre sırala
+    for (const key of Object.keys(results)) {
+      results[key] = results[key].sort((a, b) => (b.volume || 0) - (a.volume || 0)).slice(0, 20);
+    }
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      totalScanned: stocks.length,
+      results,
+    });
+  } catch (error) {
+    console.error('Indicator scan error:', error.message);
+    res.status(500).json({ error: 'Tarama hatası: ' + error.message });
+  }
+});
+
+
 // --- AI Analysis Endpoint (Gemini) ---
 const AI_CACHE = new Map(); // { symbol: { data, timestamp } }
 const AI_CACHE_TTL = 60 * 60 * 1000; // 1 saat
