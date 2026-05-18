@@ -36,7 +36,7 @@ export function ProfileScreen() {
 
   const loadProfile = async () => {
     if (!user) return;
-    setFullName(user.full_name || '');
+    setFullName(user.full_name || user.email || '');
   };
 
   const showMessage = (text: string, type: 'success' | 'error') => {
@@ -160,7 +160,7 @@ export function ProfileScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.email}>{user?.email}</Text>
-            <Text style={styles.userId}>ID: {user?.id?.substring(0, 8)}...</Text>
+            <Text style={styles.userId}>ID: {String(user?.id || '').substring(0, 8)}</Text>
           </View>
         </View>
       </View>
