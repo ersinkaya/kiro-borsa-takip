@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../constants/theme';
+import { APP_VERSION } from '../constants/version';
 
 // Screens
 import { WatchlistScreen } from '../screens/WatchlistScreen';
@@ -62,6 +63,11 @@ function TabNavigator() {
         headerTintColor: COLORS.text,
         headerTitleStyle: {
           fontWeight: 'bold',
+          fontSize: 16,
+        },
+        headerRight: () => {
+          const { Text } = require('react-native');
+          return <Text style={{ color: COLORS.textMuted, fontSize: 10, marginRight: 12 }}>v{APP_VERSION}</Text>;
         },
       })}
     >
