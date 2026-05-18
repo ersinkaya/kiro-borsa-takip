@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
@@ -13,14 +14,26 @@ import { usePortfolioStore } from '../store/usePortfolioStore';
 import { useStockStore } from '../store/useStockStore';
 import { PortfolioItem } from '../types';
 import { fetchMultipleStockPrices } from '../services/stockApi';
-import { showAlert, showConfirm } from '../utils/alert';
 import { formatTL } from '../utils/format';
 
 export function PortfolioScreen() {
   const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction } = usePortfolioStore();
   const { stocks } = useStockStore();
   const [depositAmount, setDepositAmount] = useState('');
+  const [showDeposit, setShowDeposit] = useState(false);
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [undoMessage, setUndoMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    if (portfolio.length > 0) {
+      const symbols = [...new Set(portfolio.map((p) => p.symbol))];
+      fetchMultipleStockPrices(symbols).then((prices) => {
+        if (Object.keys(prices).length > 0) updateCurrentPrices(prices);
+      });
+    }
+  }, [stocks]);
 
   const handleUndo = async () => {
     const result = await undoLastTransaction();
@@ -31,367 +44,238 @@ export function PortfolioScreen() {
     setTimeout(() => setUndoMessage(null), 4000);
   };
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  // Portföydeki hisselerin fiyatlarını güncelle
-  useEffect(() => {
-    if (portfolio.length > 0) {
-      const symbols = [...new Set(portfolio.map((p) => p.symbol))];
-      fetchMultipleStockPrices(symbols).then((prices) => {
-        if (Object.keys(prices).length > 0) {
-          updateCurrentPrices(prices);
-        }
-      });
-    }
-  }, [stocks]);
-
-  // Toplam portföy değeri
-  const totalValue = portfolio.reduce(
-    (sum, item) => sum + item.currentPrice * item.quantity,
-    0
-  );
-
-  // Toplam maliyet
-  const totalCost = portfolio.reduce(
-    (sum, item) => sum + item.buyPrice * item.quantity,
-    0
-  );
-
-  // Toplam kar/zarar
+  // Toplam değerler
+  const totalValue = portfolio.reduce((sum, item) => sum + item.currentPrice * item.quantity, 0);
+  const totalCost = portfolio.reduce((sum, item) => sum + item.buyPrice * item.quantity, 0);
   const totalPnL = totalValue - totalCost;
   const totalPnLPercent = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
 
-  const renderPortfolioItem = ({ item }: { item: PortfolioItem }) => {
-    const currentValue = item.currentPrice * item.quantity;
-    const cost = item.buyPrice * item.quantity;
-    const pnl = currentValue - cost;
-    const pnlPercent = cost > 0 ? (pnl / cost) * 100 : 0;
+  // Hisseleri grupla (aynı sembolden birden fazla alım olabilir)
+  const groupedPortfolio = portfolio.reduce((acc, item) => {
+    const existing = acc.find((g) => g.symbol === item.symbol);
+    if (existing) {
+      existing.totalQuantity += item.quantity;
+      existing.totalCost += item.buyPrice * item.quantity;
+      existing.items.push(item);
+    } else {
+      acc.push({
+        symbol: item.symbol,
+        name: item.name,
+        totalQuantity: item.quantity,
+        totalCost: item.buyPrice * item.quantity,
+        currentPrice: item.currentPrice,
+        items: [item],
+      });
+    }
+    return acc;
+  }, [] as { symbol: string; name: string; totalQuantity: number; totalCost: number; currentPrice: number; items: PortfolioItem[] }[]);
+
+  // Seçilen hissenin detayları
+  const selectedItems = selectedSymbol
+    ? portfolio.filter((p) => p.symbol === selectedSymbol)
+    : [];
+
+  const renderGroupedItem = ({ item }: { item: typeof groupedPortfolio[0] }) => {
+    const currentValue = item.currentPrice * item.totalQuantity;
+    const pnl = currentValue - item.totalCost;
+    const pnlPercent = item.totalCost > 0 ? (pnl / item.totalCost) * 100 : 0;
     const isProfit = pnl >= 0;
-    const borderColor = isProfit ? COLORS.success + '60' : COLORS.danger + '60';
-    const bgTint = isProfit ? COLORS.success + '08' : COLORS.danger + '08';
+    const avgCost = item.totalQuantity > 0 ? item.totalCost / item.totalQuantity : 0;
 
     return (
-      <View style={[styles.portfolioItem, { borderLeftColor: borderColor, borderLeftWidth: 4, backgroundColor: bgTint }]}>
-        {/* Üst Satır: Sembol ve Kar/Zarar */}
-        <View style={styles.itemHeader}>
-          <View>
-            <Text style={styles.itemSymbol}>{item.symbol}</Text>
-            <Text style={styles.itemName}>{item.name}</Text>
-          </View>
-          <View style={styles.pnlContainer}>
-            <Text
-              style={[
-                styles.pnlTL,
-                { color: isProfit ? COLORS.success : COLORS.danger },
-              ]}
-            >
-              {isProfit ? '+' : ''}{formatTL(pnl)}
-            </Text>
-            <View
-              style={[
-                styles.pnlBadge,
-                { backgroundColor: isProfit ? COLORS.success + '20' : COLORS.danger + '20' },
-              ]}
-            >
-              <Ionicons
-                name={isProfit ? 'arrow-up' : 'arrow-down'}
-                size={12}
-                color={isProfit ? COLORS.success : COLORS.danger}
-              />
-              <Text
-                style={[
-                  styles.pnlPercent,
-                  { color: isProfit ? COLORS.success : COLORS.danger },
-                ]}
-              >
-                %{Math.abs(pnlPercent).toFixed(2)}
-              </Text>
-            </View>
-          </View>
+      <TouchableOpacity
+        style={[styles.stockRow, { borderLeftColor: isProfit ? COLORS.success + '60' : COLORS.danger + '60', borderLeftWidth: 3 }]}
+        onPress={() => setSelectedSymbol(item.symbol)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.stockRowLeft}>
+          <Text style={styles.stockSymbol}>{item.symbol}</Text>
+          <Text style={styles.stockDetail}>{item.totalQuantity} adet · Ort: {formatTL(avgCost)}</Text>
         </View>
-
-        {/* Alt Satır: Detaylar */}
-        <View style={styles.itemDetails}>
-          <View style={styles.detailColumn}>
-            <Text style={styles.detailLabel}>Adet</Text>
-            <Text style={styles.detailValue}>{item.quantity}</Text>
-          </View>
-          <View style={styles.detailColumn}>
-            <Text style={styles.detailLabel}>Maliyet</Text>
-            <Text style={styles.detailValue}>{formatTL(item.buyPrice)}</Text>
-          </View>
-          <View style={styles.detailColumn}>
-            <Text style={styles.detailLabel}>Güncel</Text>
-            <Text style={[styles.detailValue, { color: isProfit ? COLORS.success : COLORS.danger }]}>
-              {formatTL(item.currentPrice)}
-            </Text>
-          </View>
-          <View style={styles.detailColumn}>
-            <Text style={styles.detailLabel}>Toplam Değer</Text>
-            <Text style={styles.detailValue}>{formatTL(currentValue)}</Text>
-          </View>
+        <View style={styles.stockRowRight}>
+          <Text style={[styles.stockPnL, { color: isProfit ? COLORS.success : COLORS.danger }]}>
+            {isProfit ? '+' : ''}{formatTL(pnl)}
+          </Text>
+          <Text style={[styles.stockPnLPercent, { color: isProfit ? COLORS.success : COLORS.danger }]}>
+            {isProfit ? '+' : ''}{pnlPercent.toFixed(2)}%
+          </Text>
         </View>
-
-        {/* Alış Tarihi */}
-        <Text style={styles.dateText}>
-          Alış: {new Date(item.buyDate).toLocaleDateString('tr-TR')}
-        </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={styles.container}>
-      {/* Özet Kartı */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Portföy Özeti</Text>
-
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Toplam Değer</Text>
-            <Text style={styles.summaryValue}>{formatTL(totalValue)}</Text>
-          </View>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryLabel}>Toplam Maliyet</Text>
-            <Text style={styles.summaryValue}>{formatTL(totalCost)}</Text>
-          </View>
+      {/* Kompakt Özet */}
+      <View style={styles.summaryBar}>
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Portföy</Text>
+          <Text style={styles.summaryValue}>{formatTL(totalValue)}</Text>
         </View>
-
-        <View style={styles.totalPnlContainer}>
-          <Text style={styles.summaryLabel}>Toplam Kar / Zarar</Text>
-          <View style={styles.totalPnlRow}>
-            <Text
-              style={[
-                styles.totalPnlValue,
-                { color: totalPnL >= 0 ? COLORS.success : COLORS.danger },
-              ]}
-            >
-              {totalPnL >= 0 ? '+' : ''}{formatTL(totalPnL)}
-            </Text>
-            <View
-              style={[
-                styles.totalPnlBadge,
-                { backgroundColor: totalPnL >= 0 ? COLORS.success + '20' : COLORS.danger + '20' },
-              ]}
-            >
-              <Ionicons
-                name={totalPnL >= 0 ? 'arrow-up' : 'arrow-down'}
-                size={14}
-                color={totalPnL >= 0 ? COLORS.success : COLORS.danger}
-              />
-              <Text
-                style={[
-                  styles.totalPnlPercent,
-                  { color: totalPnL >= 0 ? COLORS.success : COLORS.danger },
-                ]}
-              >
-                %{Math.abs(totalPnLPercent).toFixed(2)}
-              </Text>
-            </View>
-          </View>
+        <View style={[styles.summaryItem, styles.summaryCenter]}>
+          <Text style={styles.summaryLabel}>Kar/Zarar</Text>
+          <Text style={[styles.summaryValue, { color: totalPnL >= 0 ? COLORS.success : COLORS.danger, fontSize: 14 }]}>
+            {totalPnL >= 0 ? '+' : ''}{formatTL(totalPnL)} ({totalPnLPercent >= 0 ? '+' : ''}{totalPnLPercent.toFixed(1)}%)
+          </Text>
         </View>
-
-        <View style={styles.balanceSection}>
-          <View style={styles.balanceRow}>
-            <Ionicons name="wallet-outline" size={16} color={COLORS.primary} />
-            <Text style={styles.balanceText}>
-              TL Bakiye: {formatTL(account.balance)}
-            </Text>
-          </View>
-          <View style={styles.totalAssetRow}>
-            <Text style={styles.totalAssetLabel}>Toplam Varlık:</Text>
-            <Text style={styles.totalAssetValue}>{formatTL(totalValue + account.balance)}</Text>
-          </View>
-          <View style={styles.depositRow}>
-            <TextInput
-              style={styles.depositInput}
-              placeholder="Tutar"
-              placeholderTextColor={COLORS.textMuted}
-              value={depositAmount}
-              onChangeText={setDepositAmount}
-              keyboardType="decimal-pad"
-            />
-            <TouchableOpacity
-              style={styles.depositButton}
-              onPress={() => {
-                const val = parseFloat(depositAmount);
-                if (val > 0) { deposit(val); setDepositAmount(''); }
-              }}
-            >
-              <Text style={styles.depositButtonText}>Yatır</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.withdrawButton}
-              onPress={() => {
-                const val = parseFloat(depositAmount);
-                if (val > 0 && val <= account.balance) { withdraw(val); setDepositAmount(''); }
-              }}
-            >
-              <Text style={styles.withdrawButtonText}>Çek</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Son İşlemi Geri Al */}
-          {transactions.length > 0 && (
-            <TouchableOpacity style={styles.undoLastButton} onPress={handleUndo}>
-              <Ionicons name="arrow-undo" size={16} color={COLORS.warning} />
-              <Text style={styles.undoLastText}>
-                Son işlemi geri al ({transactions[0].type === 'BUY' ? 'Alış' : transactions[0].type === 'SELL' ? 'Satış' : transactions[0].type === 'DEPOSIT' ? 'Yatırım' : 'Çekim'} - {transactions[0].symbol || formatTL(transactions[0].totalAmount)})
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        <TouchableOpacity style={styles.summaryItem} onPress={() => setShowDeposit(!showDeposit)}>
+          <Text style={styles.summaryLabel}>Bakiye</Text>
+          <Text style={[styles.summaryValue, { color: COLORS.primary }]}>{formatTL(account.balance)}</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Toplam Varlık */}
+      <View style={styles.totalAssetBar}>
+        <Text style={styles.totalAssetLabel}>Toplam Varlık</Text>
+        <Text style={styles.totalAssetValue}>{formatTL(totalValue + account.balance)}</Text>
+        {transactions.length > 0 && (
+          <TouchableOpacity style={styles.undoBtn} onPress={handleUndo}>
+            <Ionicons name="arrow-undo" size={14} color={COLORS.warning} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Para Yatır/Çek (Açılır) */}
+      {showDeposit && (
+        <View style={styles.depositBar}>
+          <TextInput
+            style={styles.depositInput}
+            placeholder="Tutar"
+            placeholderTextColor={COLORS.textMuted}
+            value={depositAmount}
+            onChangeText={setDepositAmount}
+            keyboardType="decimal-pad"
+          />
+          <TouchableOpacity style={styles.depositBtn} onPress={() => { const v = parseFloat(depositAmount); if (v > 0) { deposit(v); setDepositAmount(''); } }}>
+            <Text style={styles.depositBtnText}>Yatır</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.withdrawBtn} onPress={() => { const v = parseFloat(depositAmount); if (v > 0 && v <= account.balance) { withdraw(v); setDepositAmount(''); } }}>
+            <Text style={styles.withdrawBtnText}>Çek</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Geri Alma Mesajı */}
       {undoMessage && (
-        <View
-          style={[
-            styles.undoBanner,
-            { backgroundColor: undoMessage.type === 'success' ? COLORS.success + '20' : COLORS.warning + '20' },
-          ]}
-        >
-          <Ionicons
-            name={undoMessage.type === 'success' ? 'checkmark-circle' : 'warning'}
-            size={18}
-            color={undoMessage.type === 'success' ? COLORS.success : COLORS.warning}
-          />
-          <Text
-            style={[
-              styles.undoBannerText,
-              { color: undoMessage.type === 'success' ? COLORS.success : COLORS.warning },
-            ]}
-          >
-            {undoMessage.text}
-          </Text>
+        <View style={[styles.undoBanner, { backgroundColor: undoMessage.type === 'success' ? COLORS.success + '20' : COLORS.warning + '20' }]}>
+          <Text style={[styles.undoBannerText, { color: undoMessage.type === 'success' ? COLORS.success : COLORS.warning }]}>{undoMessage.text}</Text>
         </View>
       )}
 
-      {/* Portföy Listesi */}
-      {portfolio.length === 0 ? (
+      {/* Hisse Listesi */}
+      {groupedPortfolio.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="briefcase-outline" size={64} color={COLORS.textMuted} />
+          <Ionicons name="briefcase-outline" size={48} color={COLORS.textMuted} />
           <Text style={styles.emptyText}>Portföyünüz boş</Text>
-          <Text style={styles.emptySubtext}>
-            İşlem sekmesinden hisse alarak portföyünüzü oluşturun
-          </Text>
         </View>
       ) : (
         <FlatList
-          data={portfolio}
-          keyExtractor={(item) => item.id}
-          renderItem={renderPortfolioItem}
+          data={groupedPortfolio}
+          keyExtractor={(item) => item.symbol}
+          renderItem={renderGroupedItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={{ height: SPACING.sm }} />}
+          ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: COLORS.border }} />}
         />
       )}
+
+      {/* Hisse Detay Modal */}
+      <Modal visible={!!selectedSymbol} transparent animationType="slide" onRequestClose={() => setSelectedSymbol(null)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setSelectedSymbol(null)} />
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{selectedSymbol} - Alım Detayları</Text>
+              <TouchableOpacity onPress={() => setSelectedSymbol(null)}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedItems.length > 0 && (
+              <View style={styles.modalSummary}>
+                <Text style={styles.modalSummaryText}>
+                  Toplam: {selectedItems.reduce((s, i) => s + i.quantity, 0)} adet · 
+                  Ort. Maliyet: {formatTL(selectedItems.reduce((s, i) => s + i.buyPrice * i.quantity, 0) / selectedItems.reduce((s, i) => s + i.quantity, 0))}
+                </Text>
+              </View>
+            )}
+
+            <FlatList
+              data={selectedItems}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item, index }) => {
+                const pnl = (item.currentPrice - item.buyPrice) * item.quantity;
+                const pnlPct = item.buyPrice > 0 ? ((item.currentPrice - item.buyPrice) / item.buyPrice) * 100 : 0;
+                const isProfit = pnl >= 0;
+                return (
+                  <View style={styles.detailItem}>
+                    <View style={styles.detailItemLeft}>
+                      <Text style={styles.detailItemDate}>
+                        {new Date(item.buyDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </Text>
+                      <Text style={styles.detailItemInfo}>
+                        {item.quantity} adet x {formatTL(item.buyPrice)}
+                      </Text>
+                    </View>
+                    <View style={styles.detailItemRight}>
+                      <Text style={[styles.detailItemPnL, { color: isProfit ? COLORS.success : COLORS.danger }]}>
+                        {isProfit ? '+' : ''}{formatTL(pnl)}
+                      </Text>
+                      <Text style={[styles.detailItemPct, { color: isProfit ? COLORS.success : COLORS.danger }]}>
+                        {isProfit ? '+' : ''}{pnlPct.toFixed(2)}%
+                      </Text>
+                    </View>
+                  </View>
+                );
+              }}
+              ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.xs }} />}
+              style={{ maxHeight: 300 }}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  summaryCard: {
+  container: { flex: 1, backgroundColor: COLORS.background },
+  // Kompakt Özet
+  summaryBar: {
+    flexDirection: 'row',
     backgroundColor: COLORS.surface,
-    margin: SPACING.md,
-    padding: SPACING.lg,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
-  summaryTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: SPACING.md,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: SPACING.md,
-  },
-  summaryItem: {
-    flex: 1,
-  },
-  summaryLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  summaryValue: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  totalPnlContainer: {
-    paddingTop: SPACING.md,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    marginBottom: SPACING.sm,
-  },
-  totalPnlRow: {
+  summaryItem: { flex: 1 },
+  summaryCenter: { alignItems: 'center' },
+  summaryLabel: { color: COLORS.textMuted, fontSize: 10, marginBottom: 2 },
+  summaryValue: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  // Toplam Varlık
+  totalAssetBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.xs + 2,
+    paddingHorizontal: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
     gap: SPACING.sm,
-    marginTop: 4,
   },
-  totalPnlValue: {
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  totalPnlBadge: {
+  totalAssetLabel: { color: COLORS.textSecondary, fontSize: 12 },
+  totalAssetValue: { color: COLORS.primary, fontSize: 16, fontWeight: '700', flex: 1 },
+  undoBtn: { padding: SPACING.xs },
+  // Para Yatır/Çek
+  depositBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 2,
-  },
-  totalPnlPercent: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  balanceSection: {
-    marginTop: SPACING.sm,
-    paddingTop: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  balanceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  balanceText: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: SPACING.xs,
-  },
-  totalAssetRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: SPACING.sm,
-  },
-  totalAssetLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-  },
-  totalAssetValue: {
-    color: COLORS.primary,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  depositRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
     gap: SPACING.xs,
   },
   depositInput: {
@@ -399,153 +283,56 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs + 2,
-    color: COLORS.text,
-    fontSize: 14,
-  },
-  depositButton: {
-    backgroundColor: COLORS.success,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 4,
-    borderRadius: 8,
-  },
-  depositButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  withdrawButton: {
-    backgroundColor: COLORS.danger,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 4,
-    borderRadius: 8,
-  },
-  withdrawButtonText: {
-    color: '#fff',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  undoLastButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.warning + '15',
-    borderWidth: 1,
-    borderColor: COLORS.warning + '40',
-    borderRadius: 8,
-    paddingVertical: SPACING.xs + 2,
-    marginTop: SPACING.sm,
-    gap: SPACING.xs,
-  },
-  undoLastText: {
-    color: COLORS.warning,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  undoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    marginHorizontal: SPACING.md,
-    padding: SPACING.sm,
-    borderRadius: 8,
-    marginBottom: SPACING.sm,
-  },
-  undoBannerText: {
-    fontSize: 13,
-    fontWeight: '600',
-    flex: 1,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-  },
-  emptyText: {
-    color: COLORS.textSecondary,
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: SPACING.md,
-  },
-  emptySubtext: {
-    color: COLORS.textMuted,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: SPACING.sm,
-  },
-  listContent: {
-    paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.xl,
-  },
-  portfolioItem: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
-    padding: SPACING.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: SPACING.sm,
-  },
-  itemSymbol: {
-    color: COLORS.text,
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  itemName: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  pnlContainer: {
-    alignItems: 'flex-end',
-  },
-  pnlTL: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  pnlBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
     borderRadius: 6,
-    marginTop: 4,
-    gap: 2,
-  },
-  pnlPercent: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  itemDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  detailColumn: {
-    alignItems: 'center',
-  },
-  detailLabel: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  detailValue: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
     color: COLORS.text,
     fontSize: 13,
-    fontWeight: '600',
   },
-  dateText: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginTop: SPACING.sm,
+  depositBtn: { backgroundColor: COLORS.success, paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs + 2, borderRadius: 6 },
+  depositBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  withdrawBtn: { backgroundColor: COLORS.danger, paddingHorizontal: SPACING.sm, paddingVertical: SPACING.xs + 2, borderRadius: 6 },
+  withdrawBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  // Undo Banner
+  undoBanner: { padding: SPACING.sm, marginHorizontal: SPACING.md, marginTop: SPACING.xs, borderRadius: 6 },
+  undoBannerText: { fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  // Hisse Listesi
+  listContent: { paddingBottom: SPACING.xl },
+  stockRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.surface,
   },
+  stockRowLeft: { flex: 1 },
+  stockSymbol: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  stockDetail: { color: COLORS.textMuted, fontSize: 11, marginTop: 2 },
+  stockRowRight: { alignItems: 'flex-end' },
+  stockPnL: { fontSize: 14, fontWeight: '700' },
+  stockPnLPercent: { fontSize: 11, marginTop: 1 },
+  // Empty
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { color: COLORS.textMuted, fontSize: 16, marginTop: SPACING.sm },
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalContainer: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: SPACING.lg,
+    maxHeight: '60%',
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  modalTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700' },
+  modalSummary: { backgroundColor: COLORS.background, padding: SPACING.sm, borderRadius: 8, marginBottom: SPACING.md },
+  modalSummaryText: { color: COLORS.textSecondary, fontSize: 13 },
+  detailItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: SPACING.sm },
+  detailItemLeft: {},
+  detailItemDate: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
+  detailItemInfo: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  detailItemRight: { alignItems: 'flex-end' },
+  detailItemPnL: { fontSize: 14, fontWeight: '700' },
+  detailItemPct: { fontSize: 11, marginTop: 1 },
 });
