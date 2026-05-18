@@ -15,12 +15,14 @@ import { useStockStore } from '../store/useStockStore';
 import { PortfolioItem } from '../types';
 import { fetchMultipleStockPrices } from '../services/stockApi';
 import { formatTL } from '../utils/format';
+import { TradeModal } from '../components/TradeModal';
 
 export function PortfolioScreen() {
-  const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction } = usePortfolioStore();
+  const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction, removeFromPortfolio } = usePortfolioStore();
   const { stocks } = useStockStore();
   const [depositAmount, setDepositAmount] = useState('');
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [tradeSymbol, setTradeSymbol] = useState<{ symbol: string; name: string; price: number } | null>(null);
   const [undoMessage, setUndoMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => { loadData(); }, []);
@@ -228,9 +230,35 @@ export function PortfolioScreen() {
               ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: SPACING.xs }} />}
               style={{ maxHeight: 300 }}
             />
+
+            {/* Al/Sat Butonu */}
+            <TouchableOpacity
+              style={styles.tradeFromPortfolioBtn}
+              onPress={() => {
+                const group = groupedPortfolio.find(g => g.symbol === selectedSymbol);
+                if (group) {
+                  setSelectedSymbol(null);
+                  setTradeSymbol({ symbol: group.symbol, name: group.name, price: group.currentPrice });
+                }
+              }}
+            >
+              <Ionicons name="swap-horizontal" size={18} color="#fff" />
+              <Text style={styles.tradeFromPortfolioBtnText}>Al / Sat</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Trade Modal */}
+      {tradeSymbol && (
+        <TradeModal
+          visible={!!tradeSymbol}
+          onClose={() => { setTradeSymbol(null); loadData(); }}
+          symbol={tradeSymbol.symbol}
+          name={tradeSymbol.name}
+          currentPrice={tradeSymbol.price}
+        />
+      )}
     </View>
   );
 }
@@ -333,4 +361,10 @@ const styles = StyleSheet.create({
   detailItemPnL: { fontSize: 14, fontWeight: '700' },
   detailItemPct: { fontSize: 11, marginTop: 1 },
   deleteItemBtn: { padding: SPACING.xs, marginLeft: SPACING.xs },
+  tradeFromPortfolioBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: COLORS.primary, paddingVertical: SPACING.sm + 2, borderRadius: 10,
+    marginTop: SPACING.md, gap: SPACING.xs,
+  },
+  tradeFromPortfolioBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });
