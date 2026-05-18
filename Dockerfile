@@ -3,19 +3,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Build-time env variables (Expo bunları build sırasında bundle'a gömer)
-ARG EXPO_PUBLIC_SUPABASE_URL
-ARG EXPO_PUBLIC_SUPABASE_ANON_KEY
-ENV EXPO_PUBLIC_SUPABASE_URL=$EXPO_PUBLIC_SUPABASE_URL
-ENV EXPO_PUBLIC_SUPABASE_ANON_KEY=$EXPO_PUBLIC_SUPABASE_ANON_KEY
-
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# sharp build için sistem bağımlılıkları (PWA ikonları üretmek için)
+RUN apk add --no-cache vips-dev || true
+
 COPY . .
 
-# Build web (env değişkenleri bu noktada bundle'a gömülür)
+# Build web
 RUN npx expo export --platform web
+
+# PWA: ikonları üret + manifest/SW dist'e kopyala + index.html'e meta enjekte et
+RUN node scripts/generate-icons.js
 
 EXPOSE 3000
 

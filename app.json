@@ -2,7 +2,7 @@
   "expo": {
     "name": "Borsa Takip",
     "slug": "borsa-takip",
-    "version": "1.0.0",
+    "version": "2.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -16,14 +16,17 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.borsatakip.app"
+      "bundleIdentifier": "com.borsatakip.app",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
       },
-      "package": "com.borsatakip.app"
+      "package": "com.borsatakip.app",
+      "versionCode": 1,
+      "permissions": ["INTERNET"]
     },
     "plugins": [
       "expo-asset",
