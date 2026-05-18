@@ -29,6 +29,7 @@ export interface Transaction {
   price: number; // Birim fiyat
   totalAmount: number; // Toplam tutar (TL)
   date: string;
+  realizedPnL?: number; // Satışta gerçekleşen kar/zarar
 }
 
 // TL Hesap

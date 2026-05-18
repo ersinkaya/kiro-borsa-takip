@@ -30,7 +30,7 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
   const [affectBalance, setAffectBalance] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  const { portfolio, account, addToPortfolio, removeFromPortfolio, addTransaction } =
+  const { portfolio, account, addToPortfolio, sellFromPortfolio } =
     usePortfolioStore();
 
   useEffect(() => {
@@ -94,40 +94,24 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
         return;
       }
 
-      // Satış mantığı - FIFO
-      let remainingToSell = qty;
-      const items = [...portfolioItems];
-      for (const item of items) {
-        if (remainingToSell <= 0) break;
-        if (item.quantity <= remainingToSell) {
-          remainingToSell -= item.quantity;
-          removeFromPortfolio(item.id);
-        } else {
-          removeFromPortfolio(item.id);
-          addToPortfolio({
-            symbol: item.symbol,
-            name: item.name,
-            quantity: item.quantity - remainingToSell,
-            buyPrice: item.buyPrice,
-            buyDate: item.buyDate,
-            affectBalance: false,
-          } as any);
-          remainingToSell = 0;
-        }
-      }
-
-      addTransaction({
-        type: 'SELL',
+      // Satış - backend'e gönder (FIFO + realized P&L hesaplanır)
+      const result = await sellFromPortfolio({
         symbol,
         name,
         quantity: qty,
-        price: prc,
-        totalAmount,
-        date: selectedDate,
+        sellPrice: prc,
+        sellDate: selectedDate,
         affectBalance,
-      } as any);
+      });
 
-      setMessage({ text: `✓ ${qty} adet ${symbol} satıldı${affectBalance ? ' (bakiyeye eklendi)' : ''}`, type: 'success' });
+      if (result.success) {
+        const pnlText = result.realizedPnL !== undefined
+          ? ` | Kar/Zarar: ${result.realizedPnL >= 0 ? '+' : ''}₺${result.realizedPnL.toFixed(2)}`
+          : '';
+        setMessage({ text: `✓ ${qty} adet ${symbol} satıldı${affectBalance ? ' (bakiyeye eklendi)' : ''}${pnlText}`, type: 'success' });
+      } else {
+        setMessage({ text: result.message || 'Satış hatası', type: 'error' });
+      }
       setQuantity('');
     }
   };

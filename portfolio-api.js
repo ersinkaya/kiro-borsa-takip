@@ -17,6 +17,10 @@ function setupPortfolioRoutes(app) {
       // İşlemler
       const transRes = await pool.query("SELECT * FROM transactions WHERE user_id = $1 AND type IN ('BUY', 'SELL') ORDER BY date DESC", [userId]);
 
+      // Toplam realize edilen kar/zarar
+      const realizedRes = await pool.query("SELECT COALESCE(SUM(realized_pnl), 0) as total_realized FROM transactions WHERE user_id = $1 AND type = 'SELL' AND realized_pnl IS NOT NULL", [userId]);
+      const totalRealizedPnL = parseFloat(realizedRes.rows[0].total_realized);
+
       res.json({
         portfolio: portfolioRes.rows.map(p => ({
           id: String(p.id),
@@ -36,6 +40,7 @@ function setupPortfolioRoutes(app) {
           price: parseFloat(t.price),
           totalAmount: parseFloat(t.total_amount),
           date: t.date,
+          realizedPnL: t.realized_pnl ? parseFloat(t.realized_pnl) : undefined,
         })),
         account: {
           balance: parseFloat(profile.balance),
@@ -43,6 +48,7 @@ function setupPortfolioRoutes(app) {
           totalWithdraw: parseFloat(profile.total_withdraw),
         },
         interestRate: parseFloat(profile.interest_rate),
+        totalRealizedPnL,
       });
     } catch (error) {
       console.error('Portfolio data error:', error);
@@ -88,6 +94,94 @@ function setupPortfolioRoutes(app) {
     } catch (error) {
       console.error('Buy error:', error);
       res.status(500).json({ error: 'Alım hatası' });
+    }
+  });
+
+  // ============ HİSSE SAT ============
+  app.post('/api/portfolio/sell', authMiddleware, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const { symbol, name, quantity, sellPrice, sellDate, affectBalance } = req.body;
+      const totalAmount = quantity * sellPrice;
+
+      // Portföydeki hisseleri bul (FIFO - ilk alınan ilk satılır)
+      const portRes = await pool.query(
+        'SELECT * FROM portfolio WHERE user_id = $1 AND symbol = $2 ORDER BY buy_date ASC',
+        [userId, symbol]
+      );
+
+      const items = portRes.rows;
+      const totalOwned = items.reduce((sum, i) => sum + i.quantity, 0);
+
+      if (totalOwned < quantity) {
+        return res.status(400).json({ error: `Portföyünüzde ${totalOwned} adet ${symbol} var.` });
+      }
+
+      // FIFO satış + realized P&L hesapla
+      let remainingToSell = quantity;
+      let totalCostBasis = 0; // Satılan hisselerin toplam alış maliyeti
+
+      for (const item of items) {
+        if (remainingToSell <= 0) break;
+
+        if (item.quantity <= remainingToSell) {
+          // Tamamını sat
+          totalCostBasis += item.quantity * parseFloat(item.buy_price);
+          remainingToSell -= item.quantity;
+          await pool.query('DELETE FROM portfolio WHERE id = $1', [item.id]);
+        } else {
+          // Kısmi satış
+          totalCostBasis += remainingToSell * parseFloat(item.buy_price);
+          await pool.query(
+            'UPDATE portfolio SET quantity = quantity - $1 WHERE id = $2',
+            [remainingToSell, item.id]
+          );
+          remainingToSell = 0;
+        }
+      }
+
+      // Realized P&L
+      const realizedPnL = totalAmount - totalCostBasis;
+
+      // İşlem kaydı (realized_pnl ile)
+      const transRes = await pool.query(
+        'INSERT INTO transactions (user_id, type, symbol, name, quantity, price, total_amount, date, realized_pnl) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+        [userId, 'SELL', symbol, name, quantity, sellPrice, totalAmount, sellDate || new Date().toISOString(), realizedPnL]
+      );
+
+      // Bakiye ekle (sadece affectBalance true ise)
+      if (affectBalance) {
+        await pool.query('UPDATE profiles SET balance = balance + $1, updated_at = NOW() WHERE user_id = $2', [totalAmount, userId]);
+      }
+
+      const profileRes = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
+      const profile = profileRes.rows[0];
+
+      const t = transRes.rows[0];
+
+      // Güncel portföyü döndür
+      const updatedPortRes = await pool.query('SELECT * FROM portfolio WHERE user_id = $1 ORDER BY created_at DESC', [userId]);
+
+      res.json({
+        transaction: {
+          id: String(t.id), type: t.type, symbol: t.symbol, name: t.name,
+          quantity: t.quantity, price: parseFloat(t.price), totalAmount: parseFloat(t.total_amount),
+          date: t.date, realizedPnL: parseFloat(t.realized_pnl || 0),
+        },
+        portfolio: updatedPortRes.rows.map(p => ({
+          id: String(p.id), symbol: p.symbol, name: p.name, quantity: p.quantity,
+          buyPrice: parseFloat(p.buy_price), buyDate: p.buy_date, currentPrice: parseFloat(p.buy_price),
+        })),
+        account: {
+          balance: parseFloat(profile.balance),
+          totalDeposit: parseFloat(profile.total_deposit),
+          totalWithdraw: parseFloat(profile.total_withdraw),
+        },
+        realizedPnL,
+      });
+    } catch (error) {
+      console.error('Sell error:', error);
+      res.status(500).json({ error: 'Satış hatası' });
     }
   });
 

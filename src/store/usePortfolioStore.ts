@@ -16,10 +16,12 @@ interface PortfolioState {
   transactions: Transaction[];
   account: Account;
   interestRate: number;
+  totalRealizedPnL: number;
   loading: boolean;
 
   loadData: () => Promise<void>;
   addToPortfolio: (item: Omit<PortfolioItem, 'id' | 'currentPrice'>) => Promise<void>;
+  sellFromPortfolio: (params: { symbol: string; name: string; quantity: number; sellPrice: number; sellDate: string; affectBalance: boolean }) => Promise<{ success: boolean; realizedPnL?: number; message?: string }>;
   removeFromPortfolio: (id: string) => Promise<void>;
   updateCurrentPrices: (prices: Record<string, number>) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
@@ -45,6 +47,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
   transactions: [],
   account: { balance: 0, totalDeposit: 0, totalWithdraw: 0 },
   interestRate: 50,
+  totalRealizedPnL: 0,
   loading: false,
 
   loadData: async () => {
@@ -58,6 +61,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
           transactions: data.transactions || [],
           account: data.account || { balance: 0, totalDeposit: 0, totalWithdraw: 0 },
           interestRate: data.interestRate || 50,
+          totalRealizedPnL: data.totalRealizedPnL || 0,
         });
       }
     } catch (error) {
@@ -80,6 +84,25 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
         account: data.account,
       }));
     }
+  },
+
+  sellFromPortfolio: async (params) => {
+    const res = await apiFetch('/api/portfolio/sell', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      set((state) => ({
+        portfolio: data.portfolio,
+        transactions: [data.transaction, ...state.transactions],
+        account: data.account,
+        totalRealizedPnL: state.totalRealizedPnL + (data.realizedPnL || 0),
+      }));
+      return { success: true, realizedPnL: data.realizedPnL };
+    }
+    const err = await res.json().catch(() => ({ error: 'Satış hatası' }));
+    return { success: false, message: err.error };
   },
 
   removeFromPortfolio: async (id) => {

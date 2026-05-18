@@ -23,7 +23,7 @@ export function TradeScreen() {
   const [price, setPrice] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const { portfolio, account, addToPortfolio, removeFromPortfolio, addTransaction } =
+  const { portfolio, account, addToPortfolio, sellFromPortfolio } =
     usePortfolioStore();
   const { stocks } = useStockStore();
 
@@ -115,39 +115,24 @@ export function TradeScreen() {
       showConfirm(
         'Satış Onayı',
         `${selectedStock.symbol} - ${selectedStock.name}\n${qty} adet x ₺${prc.toFixed(2)} = ₺${totalAmount.toFixed(2)}`,
-        () => {
-          // Satış mantığı - FIFO (ilk alınan ilk satılır)
-          let remainingToSell = qty;
-          for (const item of portfolioItems) {
-            if (remainingToSell <= 0) break;
-            if (item.quantity <= remainingToSell) {
-              remainingToSell -= item.quantity;
-              removeFromPortfolio(item.id);
-            } else {
-              // Kısmi satış - eski kaydı sil, yenisini ekle
-              removeFromPortfolio(item.id);
-              addToPortfolio({
-                symbol: item.symbol,
-                name: item.name,
-                quantity: item.quantity - remainingToSell,
-                buyPrice: item.buyPrice,
-                buyDate: item.buyDate,
-              });
-              remainingToSell = 0;
-            }
-          }
-
-          addTransaction({
-            type: 'SELL',
+        async () => {
+          const result = await sellFromPortfolio({
             symbol: selectedStock.symbol,
             name: selectedStock.name,
             quantity: qty,
-            price: prc,
-            totalAmount,
-            date: new Date().toISOString(),
+            sellPrice: prc,
+            sellDate: new Date().toISOString(),
+            affectBalance: false,
           });
 
-          showAlert('Başarılı', 'Satış işlemi gerçekleştirildi');
+          if (result.success) {
+            const pnlText = result.realizedPnL !== undefined
+              ? `\nKar/Zarar: ${result.realizedPnL >= 0 ? '+' : ''}₺${result.realizedPnL.toFixed(2)}`
+              : '';
+            showAlert('Başarılı', `Satış işlemi gerçekleştirildi${pnlText}`);
+          } else {
+            showAlert('Hata', result.message || 'Satış hatası');
+          }
           resetForm();
         }
       );

@@ -18,7 +18,7 @@ import { formatTL } from '../utils/format';
 import { TradeModal } from '../components/TradeModal';
 
 export function PortfolioScreen() {
-  const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction, removeFromPortfolio } = usePortfolioStore();
+  const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction, removeFromPortfolio, totalRealizedPnL } = usePortfolioStore();
   const { stocks } = useStockStore();
   const [depositAmount, setDepositAmount] = useState('');
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -114,21 +114,25 @@ export function PortfolioScreen() {
           <Text style={styles.summaryValue}>{formatTL(totalValue)}</Text>
         </View>
         <View style={[styles.summaryItem, styles.summaryCenter]}>
-          <Text style={styles.summaryLabel}>Kar/Zarar</Text>
+          <Text style={styles.summaryLabel}>Açık K/Z</Text>
           <Text style={[styles.summaryValue, { color: totalPnL >= 0 ? COLORS.success : COLORS.danger, fontSize: 14 }]}>
             {totalPnL >= 0 ? '+' : ''}{formatTL(totalPnL)} ({totalPnLPercent >= 0 ? '+' : ''}{totalPnLPercent.toFixed(1)}%)
           </Text>
         </View>
-        <TouchableOpacity style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>Bakiye</Text>
-          <Text style={[styles.summaryValue, { color: COLORS.primary }]}>{formatTL(account.balance)}</Text>
-        </TouchableOpacity>
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Realize K/Z</Text>
+          <Text style={[styles.summaryValue, { color: totalRealizedPnL >= 0 ? COLORS.success : COLORS.danger, fontSize: 14 }]}>
+            {totalRealizedPnL >= 0 ? '+' : ''}{formatTL(totalRealizedPnL)}
+          </Text>
+        </View>
       </View>
 
       {/* Toplam Varlık */}
       <View style={styles.totalAssetBar}>
         <Text style={styles.totalAssetLabel}>Toplam Varlık</Text>
         <Text style={styles.totalAssetValue}>{formatTL(totalValue + account.balance)}</Text>
+        <Text style={[styles.totalAssetLabel, { marginLeft: SPACING.sm }]}>Bakiye</Text>
+        <Text style={[styles.totalAssetValue, { color: COLORS.primary, flex: 0 }]}>{formatTL(account.balance)}</Text>
         {transactions.length > 0 && (
           <TouchableOpacity style={styles.undoBtn} onPress={handleUndo}>
             <Ionicons name="arrow-undo" size={14} color={COLORS.warning} />

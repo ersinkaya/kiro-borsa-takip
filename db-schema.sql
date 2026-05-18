@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   quantity INTEGER,
   price NUMERIC(15, 4),
   total_amount NUMERIC(15, 2) NOT NULL,
+  realized_pnl NUMERIC(15, 2),
   date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
