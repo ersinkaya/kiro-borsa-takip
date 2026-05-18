@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
@@ -13,10 +14,84 @@ import { usePortfolioStore } from '../store/usePortfolioStore';
 import { Transaction } from '../types';
 import { formatTL } from '../utils/format';
 
+type FilterType = 'ALL' | 'BUY' | 'SELL' | string; // string = symbol filtresi
+
 export function AccountScreen() {
-  const { transactions, deleteTransaction } = usePortfolioStore();
+  const { transactions, deleteTransaction, totalRealizedPnL } = usePortfolioStore();
   const [confirmDelete, setConfirmDelete] = useState<Transaction | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterType>('ALL');
+  const [selectedSymbolDetail, setSelectedSymbolDetail] = useState<string | null>(null);
+
+  // Benzersiz semboller
+  const uniqueSymbols = useMemo(() => {
+    const symbols = [...new Set(transactions.map(t => t.symbol).filter(Boolean))];
+    return symbols.sort();
+  }, [transactions]);
+
+  // Hisse bazlı özet
+  const symbolSummaries = useMemo(() => {
+    const map: Record<string, {
+      symbol: string;
+      name: string;
+      totalBuyQty: number;
+      totalBuyAmount: number;
+      totalSellQty: number;
+      totalSellAmount: number;
+      realizedPnL: number;
+      avgBuyPrice: number;
+      avgSellPrice: number;
+      transactions: Transaction[];
+    }> = {};
+
+    for (const t of transactions) {
+      if (!t.symbol) continue;
+      if (!map[t.symbol]) {
+        map[t.symbol] = {
+          symbol: t.symbol,
+          name: t.name,
+          totalBuyQty: 0,
+          totalBuyAmount: 0,
+          totalSellQty: 0,
+          totalSellAmount: 0,
+          realizedPnL: 0,
+          avgBuyPrice: 0,
+          avgSellPrice: 0,
+          transactions: [],
+        };
+      }
+      const s = map[t.symbol];
+      s.transactions.push(t);
+      if (t.type === 'BUY') {
+        s.totalBuyQty += t.quantity;
+        s.totalBuyAmount += t.totalAmount;
+      } else if (t.type === 'SELL') {
+        s.totalSellQty += t.quantity;
+        s.totalSellAmount += t.totalAmount;
+        if ((t as any).realizedPnL) {
+          s.realizedPnL += (t as any).realizedPnL;
+        }
+      }
+    }
+
+    // Ortalama fiyatları hesapla
+    for (const key of Object.keys(map)) {
+      const s = map[key];
+      s.avgBuyPrice = s.totalBuyQty > 0 ? s.totalBuyAmount / s.totalBuyQty : 0;
+      s.avgSellPrice = s.totalSellQty > 0 ? s.totalSellAmount / s.totalSellQty : 0;
+    }
+
+    return Object.values(map).sort((a, b) => b.transactions.length - a.transactions.length);
+  }, [transactions]);
+
+  // Filtrelenmiş işlemler
+  const filteredTransactions = useMemo(() => {
+    if (filter === 'ALL') return transactions;
+    if (filter === 'BUY') return transactions.filter(t => t.type === 'BUY');
+    if (filter === 'SELL') return transactions.filter(t => t.type === 'SELL');
+    // Symbol filtresi
+    return transactions.filter(t => t.symbol === filter);
+  }, [transactions, filter]);
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -28,156 +103,280 @@ export function AccountScreen() {
     }
   };
 
+  // Özet bilgiler
+  const totalBuys = transactions.filter(t => t.type === 'BUY').reduce((sum, t) => sum + t.totalAmount, 0);
+  const totalSells = transactions.filter(t => t.type === 'SELL').reduce((sum, t) => sum + t.totalAmount, 0);
+
   const renderTransaction = ({ item }: { item: Transaction }) => {
     const isBuy = item.type === 'BUY';
     const date = new Date(item.date);
+    const pnl = (item as any).realizedPnL;
 
     return (
       <View style={styles.transactionItem}>
         <View style={styles.transactionLeft}>
-          <View
-            style={[
-              styles.transactionIcon,
-              { backgroundColor: isBuy ? COLORS.success + '20' : COLORS.danger + '20' },
-            ]}
-          >
-            <Ionicons
-              name={isBuy ? 'arrow-down' : 'arrow-up'}
-              size={16}
-              color={isBuy ? COLORS.success : COLORS.danger}
-            />
+          <View style={[styles.transactionIcon, { backgroundColor: isBuy ? COLORS.success + '20' : COLORS.danger + '20' }]}>
+            <Ionicons name={isBuy ? 'arrow-down' : 'arrow-up'} size={16} color={isBuy ? COLORS.success : COLORS.danger} />
           </View>
           <View style={styles.transactionInfo}>
             <View style={styles.transactionTopRow}>
-              <Text style={styles.transactionSymbol}>{item.symbol}</Text>
+              <TouchableOpacity onPress={() => setFilter(item.symbol)}>
+                <Text style={styles.transactionSymbol}>{item.symbol}</Text>
+              </TouchableOpacity>
               <View style={[styles.typeBadge, { backgroundColor: isBuy ? COLORS.success + '20' : COLORS.danger + '20' }]}>
                 <Text style={[styles.typeText, { color: isBuy ? COLORS.success : COLORS.danger }]}>
                   {isBuy ? 'ALIŞ' : 'SATIŞ'}
                 </Text>
               </View>
             </View>
-            <Text style={styles.transactionName}>{item.name}</Text>
             <Text style={styles.transactionDetail}>
-              {item.quantity} adet x {formatTL(item.price)}
+              {item.quantity} adet x {formatTL(item.price)} = {formatTL(item.totalAmount)}
             </Text>
+            {!isBuy && pnl !== undefined && pnl !== null && (
+              <Text style={[styles.transactionPnL, { color: pnl >= 0 ? COLORS.success : COLORS.danger }]}>
+                K/Z: {pnl >= 0 ? '+' : ''}{formatTL(pnl)}
+              </Text>
+            )}
             <Text style={styles.transactionDate}>
-              {date.toLocaleDateString('tr-TR', {
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })} · {date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+              {date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
             </Text>
           </View>
         </View>
-        <View style={styles.transactionRight}>
-          <Text
-            style={[
-              styles.transactionAmount,
-              { color: isBuy ? COLORS.danger : COLORS.success },
-            ]}
-          >
-            {isBuy ? '-' : '+'}{formatTL(item.totalAmount)}
-          </Text>
-          <TouchableOpacity
-            style={styles.undoButton}
-            onPress={() => setConfirmDelete(item)}
-          >
-            <Ionicons name="arrow-undo-outline" size={16} color={COLORS.textMuted} />
-            <Text style={styles.undoText}>Geri Al</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.undoButton} onPress={() => setConfirmDelete(item)}>
+          <Ionicons name="trash-outline" size={14} color={COLORS.textMuted} />
+        </TouchableOpacity>
       </View>
     );
   };
 
-  // Özet bilgiler
-  const totalBuys = transactions.filter(t => t.type === 'BUY').reduce((sum, t) => sum + t.totalAmount, 0);
-  const totalSells = transactions.filter(t => t.type === 'SELL').reduce((sum, t) => sum + t.totalAmount, 0);
-  const buyCount = transactions.filter(t => t.type === 'BUY').length;
-  const sellCount = transactions.filter(t => t.type === 'SELL').length;
+  const renderSymbolCard = ({ item }: { item: typeof symbolSummaries[0] }) => {
+    const netQty = item.totalBuyQty - item.totalSellQty;
+    const hasSells = item.totalSellQty > 0;
+
+    return (
+      <TouchableOpacity
+        style={styles.symbolCard}
+        onPress={() => setSelectedSymbolDetail(item.symbol)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.symbolCardHeader}>
+          <Text style={styles.symbolCardSymbol}>{item.symbol}</Text>
+          {hasSells && (
+            <Text style={[styles.symbolCardPnL, { color: item.realizedPnL >= 0 ? COLORS.success : COLORS.danger }]}>
+              {item.realizedPnL >= 0 ? '+' : ''}{formatTL(item.realizedPnL)}
+            </Text>
+          )}
+        </View>
+        <View style={styles.symbolCardBody}>
+          <Text style={styles.symbolCardInfo}>
+            Alış: {item.totalBuyQty} ad · Ort: {formatTL(item.avgBuyPrice)}
+          </Text>
+          {hasSells && (
+            <Text style={styles.symbolCardInfo}>
+              Satış: {item.totalSellQty} ad · Ort: {formatTL(item.avgSellPrice)}
+            </Text>
+          )}
+          {netQty > 0 && (
+            <Text style={[styles.symbolCardInfo, { color: COLORS.primary }]}>
+              Elde: {netQty} adet
+            </Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  // Seçilen hissenin detay modal verileri
+  const selectedDetail = selectedSymbolDetail ? symbolSummaries.find(s => s.symbol === selectedSymbolDetail) : null;
 
   return (
     <View style={styles.container}>
-      {/* Özet */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>İşlem Özeti</Text>
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryItem}>
-            <Ionicons name="arrow-down-circle" size={18} color={COLORS.success} />
-            <Text style={styles.summaryLabel}>Alışlar</Text>
-            <Text style={styles.summaryValue}>{formatTL(totalBuys, 0)}</Text>
-            <Text style={styles.summaryCount}>{buyCount} işlem</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.summaryItem}>
-            <Ionicons name="arrow-up-circle" size={18} color={COLORS.danger} />
-            <Text style={styles.summaryLabel}>Satışlar</Text>
-            <Text style={styles.summaryValue}>{formatTL(totalSells, 0)}</Text>
-            <Text style={styles.summaryCount}>{sellCount} işlem</Text>
-          </View>
+      {/* Özet Bar */}
+      <View style={styles.summaryBar}>
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Toplam Alış</Text>
+          <Text style={styles.summaryValue}>{formatTL(totalBuys, 0)}</Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Toplam Satış</Text>
+          <Text style={styles.summaryValue}>{formatTL(totalSells, 0)}</Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryItem}>
+          <Text style={styles.summaryLabel}>Realize K/Z</Text>
+          <Text style={[styles.summaryValue, { color: totalRealizedPnL >= 0 ? COLORS.success : COLORS.danger }]}>
+            {totalRealizedPnL >= 0 ? '+' : ''}{formatTL(totalRealizedPnL, 0)}
+          </Text>
         </View>
       </View>
 
+      {/* Hisse Bazlı Özet Kartları */}
+      {symbolSummaries.length > 0 && (
+        <View style={styles.symbolSection}>
+          <Text style={styles.sectionTitle}>Hisse Bazlı Özet</Text>
+          <FlatList
+            data={symbolSummaries}
+            keyExtractor={(item) => item.symbol}
+            renderItem={renderSymbolCard}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: SPACING.md, gap: SPACING.sm }}
+          />
+        </View>
+      )}
+
+      {/* Filtre Chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterRow} contentContainerStyle={styles.filterContent}>
+        <TouchableOpacity
+          style={[styles.filterChip, filter === 'ALL' && styles.filterChipActive]}
+          onPress={() => setFilter('ALL')}
+        >
+          <Text style={[styles.filterChipText, filter === 'ALL' && styles.filterChipTextActive]}>Tümü</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterChip, filter === 'BUY' && styles.filterChipActive]}
+          onPress={() => setFilter('BUY')}
+        >
+          <Text style={[styles.filterChipText, filter === 'BUY' && styles.filterChipTextActive]}>Alışlar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterChip, filter === 'SELL' && styles.filterChipActive]}
+          onPress={() => setFilter('SELL')}
+        >
+          <Text style={[styles.filterChipText, filter === 'SELL' && styles.filterChipTextActive]}>Satışlar</Text>
+        </TouchableOpacity>
+        {uniqueSymbols.map(sym => (
+          <TouchableOpacity
+            key={sym}
+            style={[styles.filterChip, filter === sym && styles.filterChipActive]}
+            onPress={() => setFilter(filter === sym ? 'ALL' : sym)}
+          >
+            <Text style={[styles.filterChipText, filter === sym && styles.filterChipTextActive]}>{sym}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       {/* İşlem Listesi */}
-      {transactions.length === 0 ? (
+      {filteredTransactions.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="receipt-outline" size={64} color={COLORS.textMuted} />
-          <Text style={styles.emptyText}>Henüz işlem yapılmadı</Text>
-          <Text style={styles.emptySubtext}>
-            Takip veya Piyasa sekmesinden hisse alıp sattığınızda işlemleriniz burada görünecek
+          <Ionicons name="receipt-outline" size={48} color={COLORS.textMuted} />
+          <Text style={styles.emptyText}>
+            {filter === 'ALL' ? 'Henüz işlem yapılmadı' : 'Bu filtrede işlem yok'}
           </Text>
         </View>
       ) : (
         <FlatList
-          data={transactions}
+          data={filteredTransactions}
           keyExtractor={(item) => item.id}
           renderItem={renderTransaction}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          ItemSeparatorComponent={() => <View style={{ height: SPACING.sm }} />}
+          ItemSeparatorComponent={() => <View style={{ height: SPACING.xs }} />}
         />
       )}
 
       {/* Hata Mesajı */}
       {errorMsg && (
         <View style={styles.errorBanner}>
-          <Ionicons name="warning" size={18} color={COLORS.warning} />
           <Text style={styles.errorText}>{errorMsg}</Text>
         </View>
       )}
 
-      {/* Onay Modal */}
-      <Modal
-        visible={!!confirmDelete}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setConfirmDelete(null)}
-      >
+      {/* Hisse Detay Modal */}
+      <Modal visible={!!selectedDetail} transparent animationType="slide" onRequestClose={() => setSelectedSymbolDetail(null)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalIconContainer}>
-              <Ionicons name="arrow-undo-circle" size={36} color={COLORS.warning} />
-            </View>
-            <Text style={styles.modalTitle}>İşlemi Geri Al</Text>
-            <Text style={styles.modalMessage}>
-              {confirmDelete?.type === 'BUY'
-                ? `${confirmDelete.symbol} alış işlemi geri alınacak. Hisse portföyünden silinecek, ${formatTL(confirmDelete.totalAmount)} bakiyene geri eklenecek.`
-                : confirmDelete?.type === 'SELL'
-                  ? `${confirmDelete.symbol} satış işlemi geri alınacak. Hisse portföyüne geri eklenecek, ${formatTL(confirmDelete.totalAmount)} bakiyenden düşülecek.`
-                  : `Bu işlem geri alınacak.`}
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setSelectedSymbolDetail(null)} />
+          <View style={styles.detailModalContainer}>
+            {selectedDetail && (
+              <>
+                <View style={styles.detailModalHeader}>
+                  <View>
+                    <Text style={styles.detailModalSymbol}>{selectedDetail.symbol}</Text>
+                    <Text style={styles.detailModalName}>{selectedDetail.name}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedSymbolDetail(null)}>
+                    <Ionicons name="close" size={24} color={COLORS.text} />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Hisse Özet */}
+                <View style={styles.detailSummary}>
+                  <View style={styles.detailSummaryRow}>
+                    <View style={styles.detailSummaryItem}>
+                      <Text style={styles.detailSummaryLabel}>Toplam Alış</Text>
+                      <Text style={styles.detailSummaryValue}>{selectedDetail.totalBuyQty} adet</Text>
+                      <Text style={styles.detailSummarySubValue}>Ort: {formatTL(selectedDetail.avgBuyPrice)}</Text>
+                    </View>
+                    <View style={styles.detailSummaryItem}>
+                      <Text style={styles.detailSummaryLabel}>Toplam Satış</Text>
+                      <Text style={styles.detailSummaryValue}>{selectedDetail.totalSellQty} adet</Text>
+                      <Text style={styles.detailSummarySubValue}>Ort: {formatTL(selectedDetail.avgSellPrice)}</Text>
+                    </View>
+                    <View style={styles.detailSummaryItem}>
+                      <Text style={styles.detailSummaryLabel}>Realize K/Z</Text>
+                      <Text style={[styles.detailSummaryValue, { color: selectedDetail.realizedPnL >= 0 ? COLORS.success : COLORS.danger }]}>
+                        {selectedDetail.realizedPnL >= 0 ? '+' : ''}{formatTL(selectedDetail.realizedPnL)}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* İşlem Geçmişi */}
+                <Text style={styles.detailListTitle}>İşlem Geçmişi</Text>
+                <FlatList
+                  data={selectedDetail.transactions}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => {
+                    const isBuy = item.type === 'BUY';
+                    const date = new Date(item.date);
+                    const pnl = (item as any).realizedPnL;
+                    return (
+                      <View style={styles.detailTransItem}>
+                        <View style={[styles.detailTransDot, { backgroundColor: isBuy ? COLORS.success : COLORS.danger }]} />
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                            <Text style={styles.detailTransType}>{isBuy ? 'ALIŞ' : 'SATIŞ'}</Text>
+                            <Text style={styles.detailTransDate}>
+                              {date.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </Text>
+                          </View>
+                          <Text style={styles.detailTransInfo}>
+                            {item.quantity} adet x {formatTL(item.price)} = {formatTL(item.totalAmount)}
+                          </Text>
+                          {!isBuy && pnl !== undefined && pnl !== null && (
+                            <Text style={[styles.detailTransPnL, { color: pnl >= 0 ? COLORS.success : COLORS.danger }]}>
+                              Kar/Zarar: {pnl >= 0 ? '+' : ''}{formatTL(pnl)}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  }}
+                  ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: COLORS.border, marginLeft: 20 }} />}
+                  style={{ maxHeight: 300 }}
+                />
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Silme Onay Modal */}
+      <Modal visible={!!confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalContainer}>
+            <Ionicons name="trash" size={32} color={COLORS.danger} style={{ alignSelf: 'center', marginBottom: SPACING.sm }} />
+            <Text style={styles.confirmTitle}>İşlemi Sil</Text>
+            <Text style={styles.confirmMessage}>
+              {confirmDelete?.symbol} {confirmDelete?.type === 'BUY' ? 'alış' : 'satış'} işlemi silinecek ve portföy/bakiye geri düzeltilecek.
             </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={styles.modalCancelButton}
-                onPress={() => setConfirmDelete(null)}
-              >
-                <Text style={styles.modalCancelText}>İptal</Text>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmDelete(null)}>
+                <Text style={styles.confirmCancelText}>İptal</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modalConfirmButton}
-                onPress={handleDelete}
-              >
-                <Text style={styles.modalConfirmText}>Geri Al</Text>
+              <TouchableOpacity style={styles.confirmDeleteBtn} onPress={handleDelete}>
+                <Text style={styles.confirmDeleteText}>Sil</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -188,293 +387,121 @@ export function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  userCard: {
+  container: { flex: 1, backgroundColor: COLORS.background },
+  // Özet Bar
+  summaryBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     backgroundColor: COLORS.surface,
-    margin: SPACING.md,
-    marginBottom: 0,
-    padding: SPACING.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: SPACING.sm,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.primary + '20',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userText: {
-    flex: 1,
-  },
-  userEmail: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  userId: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 8,
-    backgroundColor: COLORS.danger + '15',
-  },
-  signOutText: {
-    color: COLORS.danger,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  summaryCard: {
-    backgroundColor: COLORS.surface,
-    margin: SPACING.md,
-    padding: SPACING.lg,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  summaryTitle: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: SPACING.md,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  summaryLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-  },
-  summaryValue: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  summaryCount: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-  },
-  divider: {
-    width: 1,
-    height: 50,
-    backgroundColor: COLORS.border,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.xl,
-  },
-  emptyText: {
-    color: COLORS.textSecondary,
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: SPACING.md,
-  },
-  emptySubtext: {
-    color: COLORS.textMuted,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: SPACING.sm,
-  },
-  listContent: {
+    paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
+  summaryItem: { flex: 1, alignItems: 'center' },
+  summaryDivider: { width: 1, backgroundColor: COLORS.border },
+  summaryLabel: { color: COLORS.textMuted, fontSize: 10, marginBottom: 2 },
+  summaryValue: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  // Hisse Kartları
+  symbolSection: { paddingTop: SPACING.sm },
+  sectionTitle: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600', marginLeft: SPACING.md, marginBottom: SPACING.xs },
+  symbolCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 10,
+    padding: SPACING.sm + 2,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    width: 160,
+  },
+  symbolCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  symbolCardSymbol: { color: COLORS.primary, fontSize: 14, fontWeight: '700' },
+  symbolCardPnL: { fontSize: 12, fontWeight: '700' },
+  symbolCardBody: { gap: 2 },
+  symbolCardInfo: { color: COLORS.textMuted, fontSize: 11 },
+  // Filtre
+  filterRow: { maxHeight: 44, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  filterContent: { paddingHorizontal: SPACING.md, alignItems: 'center', gap: SPACING.xs },
+  filterChip: {
+    paddingHorizontal: SPACING.sm + 2,
+    paddingVertical: SPACING.xs + 2,
+    borderRadius: 16,
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  filterChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterChipText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '600' },
+  filterChipTextActive: { color: '#fff' },
+  // İşlem Listesi
+  listContent: { padding: SPACING.md, paddingBottom: SPACING.xl },
   transactionItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    padding: SPACING.md,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  transactionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: SPACING.sm,
-  },
-  transactionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  transactionInfo: {
-    flex: 1,
-  },
-  transactionTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-  },
-  transactionSymbol: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  typeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  typeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  transactionName: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 1,
-  },
-  transactionDetail: {
-    color: COLORS.textSecondary,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  transactionDate: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  transactionAmount: {
-    fontSize: 15,
-    fontWeight: '700',
-    marginLeft: SPACING.sm,
-  },
-  transactionRight: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  undoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-    borderRadius: 6,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  undoText: {
-    color: COLORS.textMuted,
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  errorBanner: {
-    position: 'absolute',
-    bottom: SPACING.lg,
-    left: SPACING.md,
-    right: SPACING.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    backgroundColor: COLORS.warning + '20',
-    padding: SPACING.md,
+    padding: SPACING.sm + 2,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: COLORS.warning,
+    borderColor: COLORS.border,
   },
-  errorText: {
-    color: COLORS.warning,
-    fontSize: 13,
-    flex: 1,
-    fontWeight: '600',
+  transactionLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: SPACING.sm },
+  transactionIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  transactionInfo: { flex: 1 },
+  transactionTopRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.xs },
+  transactionSymbol: { color: COLORS.primary, fontSize: 14, fontWeight: '700' },
+  typeBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  typeText: { fontSize: 9, fontWeight: '700' },
+  transactionDetail: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  transactionPnL: { fontSize: 11, fontWeight: '700', marginTop: 1 },
+  transactionDate: { color: COLORS.textMuted, fontSize: 10, marginTop: 2 },
+  undoButton: { padding: SPACING.sm },
+  // Empty
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { color: COLORS.textMuted, fontSize: 15, marginTop: SPACING.sm },
+  // Error
+  errorBanner: {
+    position: 'absolute', bottom: SPACING.lg, left: SPACING.md, right: SPACING.md,
+    backgroundColor: COLORS.warning + '20', padding: SPACING.md, borderRadius: 10,
   },
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  errorText: { color: COLORS.warning, fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  // Detail Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  detailModalContainer: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: SPACING.lg,
+    maxHeight: '70%',
   },
-  modalContainer: {
+  detailModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  detailModalSymbol: { color: COLORS.primary, fontSize: 20, fontWeight: '700' },
+  detailModalName: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
+  detailSummary: { backgroundColor: COLORS.background, borderRadius: 12, padding: SPACING.md, marginBottom: SPACING.md },
+  detailSummaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  detailSummaryItem: { alignItems: 'center', flex: 1 },
+  detailSummaryLabel: { color: COLORS.textMuted, fontSize: 10, marginBottom: 2 },
+  detailSummaryValue: { color: COLORS.text, fontSize: 14, fontWeight: '700' },
+  detailSummarySubValue: { color: COLORS.textSecondary, fontSize: 11, marginTop: 1 },
+  detailListTitle: { color: COLORS.textSecondary, fontSize: 13, fontWeight: '600', marginBottom: SPACING.sm },
+  detailTransItem: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: SPACING.sm, gap: SPACING.sm },
+  detailTransDot: { width: 8, height: 8, borderRadius: 4, marginTop: 4 },
+  detailTransType: { color: COLORS.text, fontSize: 12, fontWeight: '700' },
+  detailTransDate: { color: COLORS.textMuted, fontSize: 11 },
+  detailTransInfo: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
+  detailTransPnL: { fontSize: 11, fontWeight: '700', marginTop: 1 },
+  // Confirm Modal
+  confirmModalContainer: {
     backgroundColor: COLORS.surface,
     borderRadius: 16,
     padding: SPACING.lg,
     width: '85%',
     maxWidth: 400,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  modalIconContainer: {
     alignSelf: 'center',
-    marginBottom: SPACING.sm,
+    marginBottom: '40%',
   },
-  modalTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: SPACING.sm,
-  },
-  modalMessage: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: SPACING.md,
-    lineHeight: 18,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-  },
-  modalCancelButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: 10,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  modalCancelText: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  modalConfirmButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: 10,
-    backgroundColor: COLORS.warning,
-  },
-  modalConfirmText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+  confirmTitle: { color: COLORS.text, fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: SPACING.xs },
+  confirmMessage: { color: COLORS.textSecondary, fontSize: 13, textAlign: 'center', marginBottom: SPACING.md, lineHeight: 18 },
+  confirmButtons: { flexDirection: 'row', gap: SPACING.sm },
+  confirmCancelBtn: { flex: 1, alignItems: 'center', paddingVertical: SPACING.sm + 2, borderRadius: 10, backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border },
+  confirmCancelText: { color: COLORS.textSecondary, fontSize: 14, fontWeight: '600' },
+  confirmDeleteBtn: { flex: 1, alignItems: 'center', paddingVertical: SPACING.sm + 2, borderRadius: 10, backgroundColor: COLORS.danger },
+  confirmDeleteText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });

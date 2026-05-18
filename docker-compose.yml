@@ -10,6 +10,17 @@ services:
     environment:
       - PORT=8080
       - GROQ_API_KEY=${GROQ_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-borsa-takip-jwt-super-secret-key-2024-finanswebte}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=borsa_takip
+      - DB_USER=borsa_user
+      - DB_PASSWORD=${DB_PASSWORD:-BorsaTakip2024Secure!}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - APP_URL=${APP_URL:-https://www.finanswebte.com}
+    depends_on:
+      - db
 
   db:
     image: postgres:16-alpine
