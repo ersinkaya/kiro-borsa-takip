@@ -20,7 +20,6 @@ export function PortfolioScreen() {
   const { portfolio, account, transactions, updateCurrentPrices, loadData, deposit, withdraw, undoLastTransaction } = usePortfolioStore();
   const { stocks } = useStockStore();
   const [depositAmount, setDepositAmount] = useState('');
-  const [showDeposit, setShowDeposit] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [undoMessage, setUndoMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
@@ -118,7 +117,7 @@ export function PortfolioScreen() {
             {totalPnL >= 0 ? '+' : ''}{formatTL(totalPnL)} ({totalPnLPercent >= 0 ? '+' : ''}{totalPnLPercent.toFixed(1)}%)
           </Text>
         </View>
-        <TouchableOpacity style={styles.summaryItem} onPress={() => setShowDeposit(!showDeposit)}>
+        <TouchableOpacity style={styles.summaryItem}>
           <Text style={styles.summaryLabel}>Bakiye</Text>
           <Text style={[styles.summaryValue, { color: COLORS.primary }]}>{formatTL(account.balance)}</Text>
         </TouchableOpacity>
@@ -135,25 +134,23 @@ export function PortfolioScreen() {
         )}
       </View>
 
-      {/* Para Yatır/Çek (Açılır) */}
-      {showDeposit && (
-        <View style={styles.depositBar}>
-          <TextInput
-            style={styles.depositInput}
-            placeholder="Tutar"
-            placeholderTextColor={COLORS.textMuted}
-            value={depositAmount}
-            onChangeText={setDepositAmount}
-            keyboardType="decimal-pad"
-          />
-          <TouchableOpacity style={styles.depositBtn} onPress={() => { const v = parseFloat(depositAmount); if (v > 0) { deposit(v); setDepositAmount(''); } }}>
-            <Text style={styles.depositBtnText}>Yatır</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.withdrawBtn} onPress={() => { const v = parseFloat(depositAmount); if (v > 0 && v <= account.balance) { withdraw(v); setDepositAmount(''); } }}>
-            <Text style={styles.withdrawBtnText}>Çek</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Para Yatır/Çek (Her Zaman Görünür) */}
+      <View style={styles.depositBar}>
+        <TextInput
+          style={styles.depositInput}
+          placeholder="TL Tutar"
+          placeholderTextColor={COLORS.textMuted}
+          value={depositAmount}
+          onChangeText={setDepositAmount}
+          keyboardType="decimal-pad"
+        />
+        <TouchableOpacity style={styles.depositBtn} onPress={() => { const v = parseFloat(depositAmount); if (v > 0) { deposit(v); setDepositAmount(''); } }}>
+          <Text style={styles.depositBtnText}>Yatır</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.withdrawBtn} onPress={() => { const v = parseFloat(depositAmount); if (v > 0 && v <= account.balance) { withdraw(v); setDepositAmount(''); } }}>
+          <Text style={styles.withdrawBtnText}>Çek</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Geri Alma Mesajı */}
       {undoMessage && (
@@ -332,7 +329,8 @@ const styles = StyleSheet.create({
   detailItemLeft: {},
   detailItemDate: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   detailItemInfo: { color: COLORS.textSecondary, fontSize: 12, marginTop: 2 },
-  detailItemRight: { alignItems: 'flex-end' },
+  detailItemRight: { alignItems: 'flex-end', flexDirection: 'row', gap: SPACING.sm },
   detailItemPnL: { fontSize: 14, fontWeight: '700' },
   detailItemPct: { fontSize: 11, marginTop: 1 },
+  deleteItemBtn: { padding: SPACING.xs, marginLeft: SPACING.xs },
 });
