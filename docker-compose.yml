@@ -1,11 +1,28 @@
 version: '3.8'
 
 services:
-  borsa-takip:
-    build: .
-    ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-      - NODE_ENV=production
+  app:
+    image: ghcr.io/ersinkaya/kiro-borsa-takip:latest
+    container_name: borsa-takip-app
     restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - PORT=8080
+      - GROQ_API_KEY=${GROQ_API_KEY}
+
+  db:
+    image: postgres:16-alpine
+    container_name: borsa-takip-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=borsa_takip
+      - POSTGRES_USER=borsa_user
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-BorsaTakip2024Secure!}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+
+volumes:
+  pgdata:
