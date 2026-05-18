@@ -1,39 +1,19 @@
-// Build-time: SVG'den PNG ikonları üret + dist/index.html'e PWA meta etiketleri ekle
+// Build-time: public/ dosyalarını dist'e kopyala + index.html'e PWA meta etiketleri ekle
+// Sharp gerektirmez - SVG ikonları doğrudan kullanılır
 const fs = require('fs');
 const path = require('path');
-
-const sharp = require('sharp');
 
 const ROOT = path.resolve(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DIST_DIR = path.join(ROOT, 'dist');
 
-const SVG_PATH = path.join(PUBLIC_DIR, 'icon.svg');
-
-const sizes = [
-  { name: 'icon-192.png', size: 192 },
-  { name: 'icon-512.png', size: 512 },
-  { name: 'icon-maskable-512.png', size: 512 },
-  { name: 'apple-touch-icon.png', size: 180 },
-  { name: 'favicon.png', size: 64 },
-];
-
-async function generateIcons() {
-  if (!fs.existsSync(SVG_PATH)) {
-    console.error('icon.svg bulunamadı:', SVG_PATH);
-    process.exit(1);
+function copyPublicFiles() {
+  if (!fs.existsSync(PUBLIC_DIR)) {
+    console.log('  ℹ public/ klasörü yok, atlandı.');
+    return;
   }
-  const svg = fs.readFileSync(SVG_PATH);
-
-  for (const { name, size } of sizes) {
-    const out = path.join(DIST_DIR, name);
-    await sharp(svg).resize(size, size).png().toFile(out);
-    console.log('  ✓', name, `(${size}x${size})`);
-  }
-
-  // public/* dosyalarını dist'e kopyala
-  const publicFiles = fs.readdirSync(PUBLIC_DIR);
-  for (const f of publicFiles) {
+  const files = fs.readdirSync(PUBLIC_DIR);
+  for (const f of files) {
     const src = path.join(PUBLIC_DIR, f);
     const dst = path.join(DIST_DIR, f);
     if (fs.statSync(src).isFile()) {
@@ -64,11 +44,8 @@ function injectPwaMeta() {
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Borsa Takip" />
     <meta name="application-name" content="Borsa Takip" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="shortcut icon" href="/favicon.png" />
     <script src="/register-sw.js" defer></script>
   `;
 
@@ -77,13 +54,8 @@ function injectPwaMeta() {
   console.log('  ✓ dist/index.html → PWA meta etiketleri eklendi');
 }
 
-(async () => {
-  console.log('🎨 PWA ikonları üretiliyor...');
-  await generateIcons();
-  console.log('📝 index.html güncelleniyor...');
-  injectPwaMeta();
-  console.log('✅ PWA hazır');
-})().catch((e) => {
-  console.error('❌ Hata:', e);
-  process.exit(1);
-});
+console.log('📦 PWA dosyaları kopyalanıyor...');
+copyPublicFiles();
+console.log('📝 index.html güncelleniyor...');
+injectPwaMeta();
+console.log('✅ PWA hazır');
