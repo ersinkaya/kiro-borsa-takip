@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { setupAuthRoutes } = require('./auth-server');
+const { setupPortfolioRoutes } = require('./portfolio-api');
 const app = express();
 
 app.use(cors());
@@ -9,6 +10,9 @@ app.use(express.json());
 
 // --- Auth Routes ---
 setupAuthRoutes(app);
+
+// --- Portfolio & Watchlist Routes ---
+setupPortfolioRoutes(app);
 
 // --- API Endpoints (Proxy) ---
 

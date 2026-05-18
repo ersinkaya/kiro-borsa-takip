@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
 import { useAuthStore } from '../store/useAuthStore';
+import { APP_VERSION, BUILD_DATE } from '../constants/version';
 
 export function AuthScreen() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -180,7 +181,7 @@ export function AuthScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Verileriniz güvenli bir şekilde saklanır
+          Verileriniz güvenli bir şekilde saklanır · v{APP_VERSION} ({BUILD_DATE})
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
