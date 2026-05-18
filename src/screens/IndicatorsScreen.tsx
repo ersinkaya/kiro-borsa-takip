@@ -9,6 +9,7 @@ import {
   FlatList,
   RefreshControl,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
 import { formatTL } from '../utils/format';
@@ -41,48 +42,48 @@ const INDICATORS = [
     title: 'Trend Başlangıcı',
     icon: 'arrow-up-circle' as const,
     color: '#10b981',
-    description: 'EMA20 → EMA50 yukarı kesiyor, RSI > 50, hacim artıyor',
-    signal: 'Yeni yükseliş başlıyor olabilir',
+    description: 'EMA20, EMA50\'yi yukarı kesiyor · RSI 50 üstüne çıkıyor · Hacim son günlerin üstünde',
+    signal: 'Yeni bir yükseliş trendi başlıyor olabilir',
   },
   {
     key: 'bottomReversal',
     title: 'Dipten Dönüş',
     icon: 'refresh-circle' as const,
     color: '#06b6d4',
-    description: 'RSI aşırı satımdan çıkıyor, MACD yukarı kesişim, hacim artıyor',
-    signal: 'Satış bitiyor olabilir',
+    description: 'RSI aşırı satım bölgesinden (30 altı) çıkıyor · MACD yukarı kesişim veriyor · Hacim artışı var',
+    signal: 'Satış baskısı azalıyor, dönüş sinyali olabilir',
   },
   {
     key: 'squeeze',
-    title: 'Sıkışma (Bollinger)',
+    title: 'Sıkışma — Sert Hareket Öncesi',
     icon: 'contract' as const,
     color: '#f59e0b',
-    description: 'Bollinger bantları daralmış, hacim artıyor, fiyat üst banda yakın',
-    signal: 'Sert hareket gelebilir',
+    description: 'Bollinger bantları daralmış · Hacim yavaş yavaş artıyor · Fiyat üst banda yaklaşıyor',
+    signal: 'Sıkışma sonrası sert bir kırılım gelebilir',
   },
   {
     key: 'strongTrend',
     title: 'Güçlü Trend Devamı',
     icon: 'rocket' as const,
     color: '#8b5cf6',
-    description: 'EMA20 > EMA50 > EMA200, ADX > 25, RSI 50-70',
-    signal: 'Trend güçlü, yükseliş devam ediyor',
+    description: 'EMA20 > EMA50 > EMA200 dizilimi · ADX 25 üstünde (güçlü trend) · RSI 50-70 arası',
+    signal: 'Mevcut yükseliş trendi güçlü, devam edebilir',
   },
   {
     key: 'breakout',
-    title: 'Kırılım (Breakout)',
+    title: 'Kırılım',
     icon: 'flash' as const,
     color: '#ef4444',
-    description: 'Direnç kırılıyor, hacim 2-3x normal, RSI 55-65',
-    signal: 'En güçlü hareketler burada gelir',
+    description: 'Fiyat 1 aylık zirveyi test ediyor · Hacim normalin 2 katından fazla · RSI 55-65 arası',
+    signal: 'Direnç kırılıyor, en güçlü hareketler burada gelir',
   },
   {
     key: 'institutional',
-    title: 'Kurumsal Giriş',
+    title: 'Kurumsal Alım İzlenimi',
     icon: 'business' as const,
     color: '#3b82f6',
-    description: 'Fiyat yükseliyor, hacim artıyor, haftalık performans pozitif',
-    signal: 'Güçlü alım izlenimi',
+    description: 'Fiyat yükselirken hacim de artıyor · Haftalık performans pozitif · RSI güçlü bölgede',
+    signal: 'Büyük oyuncuların alım yaptığı izlenimi var',
   },
 ];
 
@@ -94,6 +95,7 @@ const getApiBase = () => {
 };
 
 export function IndicatorsScreen() {
+  const navigation = useNavigation<any>();
   const [scanData, setScanData] = useState<ScanData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +133,22 @@ export function IndicatorsScreen() {
   const renderStockItem = ({ item }: { item: ScanResult }) => {
     const isPositive = item.change >= 0;
     return (
-      <View style={styles.stockItem}>
+      <TouchableOpacity
+        style={styles.stockItem}
+        activeOpacity={0.7}
+        onPress={() => {
+          navigation.navigate('StockDetail', {
+            stock: {
+              symbol: item.symbol,
+              name: item.symbol,
+              price: item.close,
+              change: item.change,
+              volume: item.volume || 0,
+              lastUpdated: new Date().toISOString(),
+            },
+          });
+        }}
+      >
         <View style={styles.stockItemLeft}>
           <Text style={styles.stockItemSymbol}>{item.symbol}</Text>
           <Text style={styles.stockItemPrice}>{formatTL(item.close)}</Text>
@@ -152,13 +169,13 @@ export function IndicatorsScreen() {
             </Text>
           )}
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={styles.container}>
-      {/* İndikatör Seçimi */}
+      {/* İndikatör Seçimi - Büyük Kartlar */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -171,16 +188,24 @@ export function IndicatorsScreen() {
           return (
             <TouchableOpacity
               key={ind.key}
-              style={[styles.tabChip, isActive && { backgroundColor: ind.color, borderColor: ind.color }]}
+              style={[
+                styles.indicatorCard,
+                isActive && { backgroundColor: ind.color, borderColor: ind.color },
+              ]}
               onPress={() => setSelectedIndicator(ind.key)}
+              activeOpacity={0.7}
             >
-              <Ionicons name={ind.icon} size={14} color={isActive ? '#fff' : ind.color} />
-              <Text style={[styles.tabChipText, isActive && { color: '#fff' }]}>{ind.title}</Text>
-              {count > 0 && (
-                <View style={[styles.tabBadge, { backgroundColor: isActive ? '#fff' : ind.color }]}>
-                  <Text style={[styles.tabBadgeText, { color: isActive ? ind.color : '#fff' }]}>{count}</Text>
-                </View>
-              )}
+              <View style={styles.indicatorCardTop}>
+                <Ionicons name={ind.icon} size={22} color={isActive ? '#fff' : ind.color} />
+                {count > 0 && (
+                  <View style={[styles.indicatorBadge, { backgroundColor: isActive ? '#fff' : ind.color }]}>
+                    <Text style={[styles.indicatorBadgeText, { color: isActive ? ind.color : '#fff' }]}>{count}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.indicatorCardTitle, isActive && { color: '#fff' }]} numberOfLines={2}>
+                {ind.title}
+              </Text>
             </TouchableOpacity>
           );
         })}
@@ -189,6 +214,7 @@ export function IndicatorsScreen() {
       {/* Seçili İndikatör Bilgisi */}
       <View style={[styles.infoBar, { borderLeftColor: selectedConfig.color }]}>
         <View style={{ flex: 1 }}>
+          <Text style={styles.infoTitle}>{selectedConfig.title}</Text>
           <Text style={styles.infoDescription}>{selectedConfig.description}</Text>
           <Text style={[styles.infoSignal, { color: selectedConfig.color }]}>💡 {selectedConfig.signal}</Text>
         </View>
@@ -196,7 +222,7 @@ export function IndicatorsScreen() {
           {loading ? (
             <ActivityIndicator size="small" color={COLORS.primary} />
           ) : (
-            <Ionicons name="refresh" size={20} color={COLORS.primary} />
+            <Ionicons name="refresh" size={22} color={COLORS.primary} />
           )}
         </TouchableOpacity>
       </View>
@@ -250,37 +276,57 @@ export function IndicatorsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  // Tab Row
-  tabRow: { maxHeight: 50, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.surface },
-  tabContent: { paddingHorizontal: SPACING.sm, alignItems: 'center', gap: SPACING.xs },
-  tabChip: {
+  // İndikatör Kartları
+  tabRow: { maxHeight: 110, backgroundColor: COLORS.surface, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tabContent: { paddingHorizontal: SPACING.sm, paddingVertical: SPACING.sm, alignItems: 'stretch', gap: SPACING.sm },
+  indicatorCard: {
+    width: 100,
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indicatorCardTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.sm + 2,
-    paddingVertical: SPACING.xs + 2,
-    borderRadius: 16,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     gap: 4,
+    marginBottom: 6,
   },
-  tabChipText: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '600' },
-  tabBadge: { minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
-  tabBadgeText: { fontSize: 9, fontWeight: '700' },
+  indicatorBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  indicatorBadgeText: { fontSize: 11, fontWeight: '700' },
+  indicatorCardTitle: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
   // Info Bar
   infoBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
-    padding: SPACING.sm + 2,
+    padding: SPACING.md,
     paddingHorizontal: SPACING.md,
-    borderLeftWidth: 3,
+    borderLeftWidth: 4,
     margin: SPACING.sm,
     marginBottom: 0,
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  infoDescription: { color: COLORS.textSecondary, fontSize: 11, lineHeight: 16 },
-  infoSignal: { fontSize: 11, fontWeight: '600', marginTop: 2 },
+  infoTitle: { color: COLORS.text, fontSize: 14, fontWeight: '700', marginBottom: 3 },
+  infoDescription: { color: COLORS.textSecondary, fontSize: 12, lineHeight: 17 },
+  infoSignal: { fontSize: 12, fontWeight: '600', marginTop: 4 },
   refreshBtn: { padding: SPACING.sm },
   // Scan Info
   scanInfo: {
