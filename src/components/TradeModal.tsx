@@ -55,7 +55,7 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
   const prc = parseFloat(price) || 0;
   const totalAmount = qty * prc;
 
-  const handleTrade = () => {
+  const handleTrade = async () => {
     setMessage(null);
 
     if (qty <= 0) {
