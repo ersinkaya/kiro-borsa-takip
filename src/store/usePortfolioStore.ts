@@ -132,7 +132,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
 
   clearPortfolio: async () => {
     await apiFetch('/api/portfolio/clear', { method: 'POST' });
-    set({ portfolio: [] });
+    set({ portfolio: [], transactions: [], account: { balance: 0, totalDeposit: 0, totalWithdraw: 0 } });
   },
 
   resetAll: async () => {

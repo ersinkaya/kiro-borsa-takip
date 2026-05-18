@@ -151,7 +151,10 @@ function setupPortfolioRoutes(app) {
   // ============ PORTFÖY TEMİZLE ============
   app.post('/api/portfolio/clear', authMiddleware, async (req, res) => {
     try {
-      await pool.query('DELETE FROM portfolio WHERE user_id = $1', [req.user.id]);
+      const userId = req.user.id;
+      await pool.query('DELETE FROM portfolio WHERE user_id = $1', [userId]);
+      await pool.query('DELETE FROM transactions WHERE user_id = $1', [userId]);
+      await pool.query('UPDATE profiles SET balance = 0, total_deposit = 0, total_withdraw = 0, updated_at = NOW() WHERE user_id = $1', [userId]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: 'Temizleme hatası' });
