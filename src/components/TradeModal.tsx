@@ -8,6 +8,7 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
@@ -25,21 +26,23 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
   const [tradeType, setTradeType] = useState<'BUY' | 'SELL'>('BUY');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
+  const [tradeDate, setTradeDate] = useState('');
+  const [affectBalance, setAffectBalance] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const { portfolio, account, addToPortfolio, removeFromPortfolio, addTransaction } =
     usePortfolioStore();
 
-  // Modal açıldığında güncel fiyatı doldur
   useEffect(() => {
     if (visible) {
-      if (currentPrice > 0) {
-        setPrice(currentPrice.toFixed(2));
-      } else {
-        setPrice('');
-      }
+      if (currentPrice > 0) setPrice(currentPrice.toFixed(2));
+      else setPrice('');
       setQuantity('');
       setMessage(null);
+      setAffectBalance(false);
+      // Bugünün tarihi
+      const today = new Date().toISOString().split('T')[0];
+      setTradeDate(today);
     }
   }, [visible, currentPrice]);
 
@@ -64,24 +67,26 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
       return;
     }
 
+    // Tarih doğrulama
+    const selectedDate = tradeDate ? new Date(tradeDate).toISOString() : new Date().toISOString();
+
     if (tradeType === 'BUY') {
+      // Bakiye kontrolü (sadece affectBalance açıksa)
+      if (affectBalance && totalAmount > account.balance) {
+        setMessage({ text: `Yetersiz bakiye. Bakiyeniz: ₺${account.balance.toFixed(2)}`, type: 'error' });
+        return;
+      }
+
       addToPortfolio({
         symbol,
         name,
         quantity: qty,
         buyPrice: prc,
-        buyDate: new Date().toISOString(),
-      });
-      addTransaction({
-        type: 'BUY',
-        symbol,
-        name,
-        quantity: qty,
-        price: prc,
-        totalAmount,
-        date: new Date().toISOString(),
-      });
-      setMessage({ text: `✓ ${qty} adet ${symbol} alındı!`, type: 'success' });
+        buyDate: selectedDate,
+        affectBalance,
+      } as any);
+
+      setMessage({ text: `✓ ${qty} adet ${symbol} portföye eklendi${affectBalance ? ' (bakiyeden düşüldü)' : ''}`, type: 'success' });
       setQuantity('');
     } else {
       if (totalOwned < qty) {
@@ -89,6 +94,7 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
         return;
       }
 
+      // Satış mantığı - FIFO
       let remainingToSell = qty;
       const items = [...portfolioItems];
       for (const item of items) {
@@ -104,7 +110,8 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
             quantity: item.quantity - remainingToSell,
             buyPrice: item.buyPrice,
             buyDate: item.buyDate,
-          });
+            affectBalance: false,
+          } as any);
           remainingToSell = 0;
         }
       }
@@ -116,9 +123,11 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
         quantity: qty,
         price: prc,
         totalAmount,
-        date: new Date().toISOString(),
-      });
-      setMessage({ text: `✓ ${qty} adet ${symbol} satıldı!`, type: 'success' });
+        date: selectedDate,
+        affectBalance,
+      } as any);
+
+      setMessage({ text: `✓ ${qty} adet ${symbol} satıldı${affectBalance ? ' (bakiyeye eklendi)' : ''}`, type: 'success' });
       setQuantity('');
     }
   };
@@ -142,7 +151,7 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
             </TouchableOpacity>
           </View>
 
-          {/* Fiyat & Portföy Bilgisi */}
+          {/* Bilgi Satırı */}
           <View style={styles.infoRow}>
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Güncel Fiyat</Text>
@@ -177,17 +186,13 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
               style={[styles.typeButton, tradeType === 'BUY' && styles.buyActive]}
               onPress={() => { setTradeType('BUY'); setMessage(null); }}
             >
-              <Text style={[styles.typeText, tradeType === 'BUY' && { color: '#fff' }]}>
-                AL
-              </Text>
+              <Text style={[styles.typeText, tradeType === 'BUY' && { color: '#fff' }]}>AL</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.typeButton, tradeType === 'SELL' && styles.sellActive]}
               onPress={() => { setTradeType('SELL'); setMessage(null); }}
             >
-              <Text style={[styles.typeText, tradeType === 'SELL' && { color: '#fff' }]}>
-                SAT
-              </Text>
+              <Text style={[styles.typeText, tradeType === 'SELL' && { color: '#fff' }]}>SAT</Text>
             </TouchableOpacity>
           </View>
 
@@ -217,6 +222,34 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
             />
           </View>
 
+          {/* Tarih */}
+          <View style={styles.inputRow}>
+            <Text style={styles.inputLabel}>Tarih</Text>
+            <TextInput
+              style={styles.input}
+              value={tradeDate}
+              onChangeText={setTradeDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={COLORS.textMuted}
+            />
+          </View>
+
+          {/* Bakiye Etkisi */}
+          <View style={styles.balanceToggleRow}>
+            <View style={styles.balanceToggleLeft}>
+              <Ionicons name="wallet-outline" size={18} color={COLORS.textSecondary} />
+              <Text style={styles.balanceToggleText}>
+                {tradeType === 'BUY' ? 'TL bakiyemden düşülsün' : 'TL bakiyeme eklensin'}
+              </Text>
+            </View>
+            <Switch
+              value={affectBalance}
+              onValueChange={setAffectBalance}
+              trackColor={{ false: COLORS.border, true: COLORS.primary + '60' }}
+              thumbColor={affectBalance ? COLORS.primary : COLORS.textMuted}
+            />
+          </View>
+
           {/* Toplam */}
           {totalAmount > 0 && (
             <View style={styles.totalRow}>
@@ -239,7 +272,7 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
               color="#fff"
             />
             <Text style={styles.tradeButtonText}>
-              {tradeType === 'BUY' ? 'SATIN AL' : 'SAT'}
+              {tradeType === 'BUY' ? 'PORTFÖYE EKLE' : 'SAT'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -249,14 +282,8 @@ export function TradeModal({ visible, onClose, symbol, name, currentPrice }: Tra
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'flex-end',
-  },
-  overlayTouch: {
-    flex: 1,
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  overlayTouch: { flex: 1 },
   container: {
     backgroundColor: COLORS.surface,
     borderTopLeftRadius: 24,
@@ -264,132 +291,49 @@ const styles = StyleSheet.create({
     padding: SPACING.lg,
     paddingBottom: SPACING.xl + 10,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: SPACING.md,
-  },
-  symbol: {
-    color: COLORS.primary,
-    fontSize: 22,
-    fontWeight: '700',
-  },
-  name: {
-    color: COLORS.textSecondary,
-    fontSize: 13,
-    marginTop: 2,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md },
+  symbol: { color: COLORS.primary, fontSize: 22, fontWeight: '700' },
+  name: { color: COLORS.textSecondary, fontSize: 13, marginTop: 2 },
   infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: COLORS.background,
-    padding: SPACING.md,
-    borderRadius: 12,
-    marginBottom: SPACING.md,
+    flexDirection: 'row', justifyContent: 'space-between',
+    backgroundColor: COLORS.background, padding: SPACING.md, borderRadius: 12, marginBottom: SPACING.md,
   },
-  infoItem: {
-    alignItems: 'center',
-  },
-  infoLabel: {
-    color: COLORS.textMuted,
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  infoValue: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  messageBox: {
-    padding: SPACING.sm,
-    borderRadius: 8,
-    marginBottom: SPACING.md,
-    alignItems: 'center',
-  },
-  messageText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  typeRow: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginBottom: SPACING.md,
-  },
+  infoItem: { alignItems: 'center' },
+  infoLabel: { color: COLORS.textMuted, fontSize: 11, marginBottom: 2 },
+  infoValue: { color: COLORS.text, fontSize: 14, fontWeight: '600' },
+  messageBox: { padding: SPACING.sm, borderRadius: 8, marginBottom: SPACING.md, alignItems: 'center' },
+  messageText: { fontSize: 13, fontWeight: '600' },
+  typeRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.md },
   typeButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: SPACING.sm + 2,
-    borderRadius: 10,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    flex: 1, alignItems: 'center', paddingVertical: SPACING.sm + 2, borderRadius: 10,
+    backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border,
   },
-  buyActive: {
-    backgroundColor: COLORS.success,
-    borderColor: COLORS.success,
-  },
-  sellActive: {
-    backgroundColor: COLORS.danger,
-    borderColor: COLORS.danger,
-  },
-  typeText: {
-    color: COLORS.textSecondary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sm,
-  },
-  inputLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-    width: 80,
-  },
+  buyActive: { backgroundColor: COLORS.success, borderColor: COLORS.success },
+  sellActive: { backgroundColor: COLORS.danger, borderColor: COLORS.danger },
+  typeText: { color: COLORS.textSecondary, fontSize: 15, fontWeight: '700' },
+  inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: SPACING.sm },
+  inputLabel: { color: COLORS.textSecondary, fontSize: 14, width: 80 },
   input: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    color: COLORS.text,
-    fontSize: 16,
-    textAlign: 'right',
+    flex: 1, backgroundColor: COLORS.background, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 10, paddingHorizontal: SPACING.md, paddingVertical: SPACING.sm,
+    color: COLORS.text, fontSize: 16, textAlign: 'right',
   },
+  balanceToggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: COLORS.background, padding: SPACING.sm + 2, paddingHorizontal: SPACING.md,
+    borderRadius: 10, marginBottom: SPACING.sm, borderWidth: 1, borderColor: COLORS.border,
+  },
+  balanceToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, flex: 1 },
+  balanceToggleText: { color: COLORS.textSecondary, fontSize: 13 },
   totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: SPACING.sm,
-    marginBottom: SPACING.sm,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: SPACING.sm, marginBottom: SPACING.sm, borderTopWidth: 1, borderTopColor: COLORS.border,
   },
-  totalLabel: {
-    color: COLORS.textSecondary,
-    fontSize: 14,
-  },
-  totalValue: {
-    color: COLORS.text,
-    fontSize: 20,
-    fontWeight: '700',
-  },
+  totalLabel: { color: COLORS.textSecondary, fontSize: 14 },
+  totalValue: { color: COLORS.text, fontSize: 20, fontWeight: '700' },
   tradeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: SPACING.md,
-    borderRadius: 12,
-    gap: SPACING.sm,
-    marginTop: SPACING.sm,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: SPACING.md, borderRadius: 12, gap: SPACING.sm, marginTop: SPACING.sm,
   },
-  tradeButtonText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-  },
+  tradeButtonText: { color: '#fff', fontSize: 17, fontWeight: '700' },
 });

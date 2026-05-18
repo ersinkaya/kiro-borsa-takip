@@ -54,7 +54,7 @@ function setupPortfolioRoutes(app) {
   app.post('/api/portfolio/buy', authMiddleware, async (req, res) => {
     try {
       const userId = req.user.id;
-      const { symbol, name, quantity, buyPrice, buyDate } = req.body;
+      const { symbol, name, quantity, buyPrice, buyDate, affectBalance } = req.body;
       const totalAmount = quantity * buyPrice;
 
       // Portföye ekle
@@ -69,8 +69,10 @@ function setupPortfolioRoutes(app) {
         [userId, 'BUY', symbol, name, quantity, buyPrice, totalAmount, buyDate || new Date().toISOString()]
       );
 
-      // Bakiye düş
-      await pool.query('UPDATE profiles SET balance = balance - $1, updated_at = NOW() WHERE user_id = $2', [totalAmount, userId]);
+      // Bakiye düş (sadece affectBalance true ise)
+      if (affectBalance) {
+        await pool.query('UPDATE profiles SET balance = balance - $1, updated_at = NOW() WHERE user_id = $2', [totalAmount, userId]);
+      }
 
       const profileRes = await pool.query('SELECT * FROM profiles WHERE user_id = $1', [userId]);
       const profile = profileRes.rows[0];
