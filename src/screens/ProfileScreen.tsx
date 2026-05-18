@@ -11,9 +11,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../constants/theme';
-import { useAuthStore } from '../store/useAuthStore';
+import { useAuthStore, getAuthHeaders } from '../store/useAuthStore';
 import { usePortfolioStore } from '../store/usePortfolioStore';
-import { supabase } from '../services/supabase';
 
 export function ProfileScreen() {
   const { user, signOut } = useAuthStore();
@@ -37,12 +36,7 @@ export function ProfileScreen() {
 
   const loadProfile = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user.id)
-      .single();
-    if (data) setFullName(data.full_name || '');
+    setFullName(user.full_name || '');
   };
 
   const showMessage = (text: string, type: 'success' | 'error') => {
@@ -55,16 +49,14 @@ export function ProfileScreen() {
     if (!user) return;
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: fullName, updated_at: new Date().toISOString() })
-        .eq('id', user.id);
-
-      if (error) {
-        showMessage(error.message, 'error');
-      } else {
-        showMessage('İsim başarıyla güncellendi', 'success');
-      }
+      const headers = await getAuthHeaders();
+      const res = await fetch('/auth/update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ full_name: fullName }),
+      });
+      if (res.ok) showMessage('İsim başarıyla güncellendi', 'success');
+      else showMessage('Güncelleme hatası', 'error');
     } finally {
       setLoading(false);
     }
@@ -72,19 +64,18 @@ export function ProfileScreen() {
 
   // E-posta güncelleme
   const updateEmail = async () => {
-    if (!newEmail) {
-      showMessage('Yeni e-posta gerekli', 'error');
-      return;
-    }
+    if (!newEmail) { showMessage('Yeni e-posta gerekli', 'error'); return; }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ email: newEmail });
-      if (error) {
-        showMessage(error.message, 'error');
-      } else {
-        showMessage('Onay e-postası gönderildi. E-postanızı kontrol edin.', 'success');
-        setNewEmail('');
-      }
+      const headers = await getAuthHeaders();
+      const res = await fetch('/auth/update-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ email: newEmail }),
+      });
+      const data = await res.json();
+      if (res.ok) { showMessage('E-posta güncellendi', 'success'); setNewEmail(''); }
+      else showMessage(data.error || 'Hata', 'error');
     } finally {
       setLoading(false);
     }
@@ -92,49 +83,28 @@ export function ProfileScreen() {
 
   // Şifre değiştirme
   const updatePassword = async () => {
-    if (!newPassword || !confirmPassword) {
-      showMessage('Tüm şifre alanlarını doldurun', 'error');
-      return;
-    }
-    if (newPassword.length < 6) {
-      showMessage('Şifre en az 6 karakter olmalı', 'error');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      showMessage('Şifreler eşleşmiyor', 'error');
-      return;
-    }
-
+    if (!newPassword || !confirmPassword) { showMessage('Tüm şifre alanlarını doldurun', 'error'); return; }
+    if (newPassword.length < 6) { showMessage('Şifre en az 6 karakter olmalı', 'error'); return; }
+    if (newPassword !== confirmPassword) { showMessage('Şifreler eşleşmiyor', 'error'); return; }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) {
-        showMessage(error.message, 'error');
-      } else {
-        showMessage('Şifre başarıyla değiştirildi', 'success');
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      }
+      const headers = await getAuthHeaders();
+      const res = await fetch('/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ newPassword }),
+      });
+      const data = await res.json();
+      if (res.ok) { showMessage('Şifre başarıyla değiştirildi', 'success'); setNewPassword(''); setConfirmPassword(''); }
+      else showMessage(data.error || 'Hata', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  // Şifre sıfırlama maili
+  // Şifre sıfırlama (kendi sistemimizde direkt değiştirme var, mail yok)
   const resetPassword = async () => {
-    if (!user?.email) return;
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(user.email);
-      if (error) {
-        showMessage(error.message, 'error');
-      } else {
-        showMessage('Şifre sıfırlama maili gönderildi', 'success');
-      }
-    } finally {
-      setLoading(false);
-    }
+    showMessage('Şifrenizi yukarıdaki alandan değiştirebilirsiniz', 'success');
   };
 
   // Tehlikeli işlemler

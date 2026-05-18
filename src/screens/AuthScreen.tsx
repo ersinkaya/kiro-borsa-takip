@@ -180,7 +180,7 @@ export function AuthScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Verileriniz güvenli bir şekilde Supabase'de saklanır
+          Verileriniz güvenli bir şekilde saklanır
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
